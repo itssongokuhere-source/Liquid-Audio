@@ -1,0 +1,185 @@
+{
+  "app_name": "LiquidAudio",
+  "personality": "6 Glass / Luxe",
+  "personality_one_liner": "A cinematic, deeply atmospheric music player defined by pure liquid-glass surfaces, immersive artwork blur, and premium fluid transitions.",
+  "color": {
+    "surface": "#FCFCFC",
+    "onSurface": "#0A0A0A",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1A1A1A",
+    "surfaceTertiary": "#F0F0F0",
+    "onSurfaceTertiary": "#262626",
+    "surfaceInverse": "#0A0A0A",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#E11D48",
+    "onBrand": "#FFFFFF",
+    "brandPrimary": "#E11D48",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#BE123C",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#FFE4E6",
+    "onBrandTertiary": "#881337",
+    "success": "#10B981",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#FFFFFF",
+    "error": "#EF4444",
+    "onError": "#FFFFFF",
+    "info": "#6B7280",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E7EB",
+    "borderStrong": "#D1D5DB",
+    "divider": "#F3F4F6",
+    "muted": "#6B7280",
+    "surface_dark": "#050505",
+    "onSurface_dark": "#FFFFFF",
+    "surfaceSecondary_dark": "#121212",
+    "onSurfaceSecondary_dark": "#E5E5E5",
+    "surfaceTertiary_dark": "#1F1F1F",
+    "onSurfaceTertiary_dark": "#A3A3A3",
+    "surfaceInverse_dark": "#FCFCFC",
+    "onSurfaceInverse_dark": "#0A0A0A",
+    "brand_dark": "#F43F5E",
+    "onBrand_dark": "#FFFFFF",
+    "brandPrimary_dark": "#F43F5E",
+    "onBrandPrimary_dark": "#FFFFFF",
+    "brandSecondary_dark": "#E11D48",
+    "onBrandSecondary_dark": "#FFFFFF",
+    "brandTertiary_dark": "#4C0519",
+    "onBrandTertiary_dark": "#FFE4E6",
+    "border_dark": "#262626",
+    "borderStrong_dark": "#404040",
+    "divider_dark": "#171717",
+    "muted_dark": "#A3A3A3"
+  },
+  "typography": {
+    "displayFontFamily": "Fraunces",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24,
+      "3xl": 32
+    }
+  },
+  "spacing": {
+    "rule": "Generous cinematic spacing. Use negative space to let the album artwork and liquid glass surfaces breathe. Minimum 24pt margins on cards.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use heavy liquid glass effects on the Now Playing screen, extracting album art colors as a full-bleed blurred background.",
+      "Apply a translucent frosted glass header and bottom tab bar over scrollable recommendation grids.",
+      "Use tinted translucency beneath white foreground text to guarantee 4.5:1 contrast over bright/busy album art (at least 70% opacity base under the blur).",
+      "Float the mini-player above the tab bar as a pill-shaped frosted glass container."
+    ],
+    "dont's": [
+      "Don't apply glassmorphism to standard list items or dense library rows—reserve it for elevated surfaces like sheets, nav bars, and the main player canvas.",
+      "Don't stack more than two layers of blur on top of each other.",
+      "Don't sacrifice accessibility; always use a gradient-to-dark scrim or heavy black tinting underneath white lyrics/text on blurred backgrounds."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-blur",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary_dark"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home / For You",
+      "purpose": "A lush, immersive discovery feed featuring oversized, edge-to-edge album artwork cards and curated genre rows.",
+      "states": {
+        "loading": "Cinematic skeleton screens featuring slow-pulsing dark gradients.",
+        "empty": "A soft, deep-space gradient with a solitary 'Discover Music' icon and primary CTA.",
+        "error": "Muted error state over a dark blur, with a subtle 'Retry Connection' glass button."
+      },
+      "layout": "Grid-based with a large featured track at the top (hero card). Scrollable horizontal rows for 'Trending' and 'Recently Played'. The bottom tab bar is fully translucent, and the mini-player floats above it."
+    },
+    {
+      "name": "Now Playing (Full Screen)",
+      "purpose": "The crown jewel of the app—an emotionally resonant playback canvas with massive album art and liquid-glass atmospheric lighting.",
+      "states": {
+        "loading": "Artwork pulses gently while buffering.",
+        "empty": "N/A - Screen only accessible when a track exists.",
+        "error": "Subtle toast notification for playback failure."
+      },
+      "layout": "Full-bleed album art in the background with an intense blur radius (50-100) and a 40-70% dark tint overlay. The foreground features a crisp, rounded-corner album cover with a soft shadow, dropping down to cleanly spaced transport controls and a timeline slider. Swiping up seamlessly transitions to the Lyrics view."
+    },
+    {
+      "name": "Lyrics Canvas",
+      "purpose": "A karaoke-style, line-by-line synced lyrics experience that floats over the dynamic album art blur.",
+      "states": {
+        "loading": "Shimmering 'Loading Lyrics...' text centered.",
+        "empty": "'Instrumental' or 'Lyrics not available' text beautifully centered on the glass canvas.",
+        "error": "Small glass button to 'Reload Lyrics'."
+      },
+      "layout": "Massive typography (using Geist) scrolling vertically. Active lyric line is 100% opacity white (scale slightly up), while inactive lines are 30-40% opacity white. The background remains the liquid-glass album artwork."
+    },
+    {
+      "name": "Premium Equalizer",
+      "purpose": "An audiophile's control center for shaping sound, blending technical utility with premium aesthetics.",
+      "states": {
+        "loading": "Sliders fade in sequentially.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "A dark, highly polished modal sheet. Top section contains a horizontal scrolling row of 'Presets' (Acoustic, Bass Booster, etc.) using glass chips. The main area features vertical sliders (rotated -90deg) grouped evenly. Active slider tracks glow with the `brandPrimary` color, while inactive tracks are muted dark grey. A subtle live-waveform visualizer sits at the very top."
+    }
+  ],
+  "images": {
+    "hero_artwork_1": {
+      "url": "https://images.unsplash.com/photo-1784564627086-7a847ede32c8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzV8MHwxfHNlYXJjaHwyfHxhbGJ1bSUyMGNvdmVyJTIwbXVzaWMlMjBhcnQlMjBzcXVhcmV8ZW58MHx8fHwxNzg4NTU2NTM5fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract blue spiral album cover"
+    },
+    "hero_artwork_2": {
+      "url": "https://images.pexels.com/photos/11513011/pexels-photo-11513011.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Vibrant pink and violet geometric album cover"
+    },
+    "eq_background_texture": {
+      "url": "https://images.unsplash.com/photo-1548362851-ea052637ad64?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxkYXJrJTIwYWJzdHJhY3QlMjBsaXF1aWQlMjBnbGFzcyUyMHRleHR1cmUlMjBibHVyfGVufDB8fHx8MTc4ODU1NjUzOXww&ixlib=rb-4.1.0&q=85",
+      "alt": "Dark abstract liquid glass texture blur"
+    }
+  },
+  "haptics": {
+    "play_pause": "impactMedium",
+    "next_prev_track": "impactLight",
+    "lyrics_line_sync": "selection",
+    "equalizer_slider_adjust": "selection",
+    "equalizer_preset_select": "impactMedium",
+    "tab_change": "selection"
+  },
+  "instructions_to_main_agent": [
+    "CRITICAL: The user explicitly requested a 'Dark liquid glass theme (primary), also support Light theme with a toggle'. Implement robust theme switching in the app shell, using the `_dark` appended tokens for the dark mode.",
+    "Implement the 'Now Playing' screen as a full-screen modal or dedicated route, where the background is an `expo-image` of the album cover wrapped in a heavy `expo-blur` (tint='dark', intensity=80+).",
+    "For the Equalizer screen, use vertical sliders. Since React Native doesn't have a native vertical slider, use `@react-native-community/slider` rotated via `transform: [{ rotate: '-90deg' }]` or implement a custom Reanimated pan gesture slider.",
+    "The Mini-Player must be a persistent glass pill positioned directly above the bottom tab bar, floating over the content. Use absolute positioning with an `expo-blur` background.",
+    "Lyrics Screen: Build a synced lyrics view where the active lyric line is highly opaque and slightly scaled, and inactive lines are faded. Ensure the scroll view auto-scrolls to the active line. Layer this entirely over the blurred artwork canvas.",
+    "NO BLUES rule strictly observed: The accent color is a premium Apple Music-inspired Ruby/Rose (`#E11D48` light, `#F43F5E` dark). Do not introduce navy or indigo anywhere.",
+    "Use 'Fraunces' for massive, cinematic screen titles, and 'Geist' for all functional UI, track lists, and lyrics to ensure maximum legibility against complex glass backgrounds."
+  ]
+}
