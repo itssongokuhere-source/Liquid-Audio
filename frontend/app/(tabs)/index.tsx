@@ -30,11 +30,11 @@ const GENRES = [
   "Hip-Hop/Rap",
   "House",
   "Pop",
-  "Ambient",
   "Techno",
+  "Trap",
   "R&B/Soul",
   "Deep House",
-  "Rock",
+  "Ambient",
 ];
 
 export default function HomeScreen() {

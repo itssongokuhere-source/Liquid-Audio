@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FlatList, Pressable, ScrollView, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAudio } from "@/src/components/audio-context";
@@ -35,6 +36,7 @@ export default function LibraryScreen() {
   const { playNow, current, hasTrack } = useAudio();
   const openActions = useTrackActions();
   const { data: library } = useLibrary();
+  const router = useRouter();
 
   const [tab, setTab] = useState<Tab>("Favorites");
   const [themePref, setThemePref] = useState<string>(getAppScheme() ?? "system");
@@ -120,7 +122,7 @@ export default function LibraryScreen() {
               <Pressable
                 testID={`playlist-${item.id}`}
                 style={styles.playlistRow}
-                onPress={() => item.tracks[0] && playNow(item.tracks[0], item.tracks)}
+                onPress={() => router.push(`/playlist/${item.id}`)}
               >
                 <View style={styles.playlistIcon}>
                   <Icon name="musical-notes" size={22} color={colors.onBrandPrimary} />
@@ -133,7 +135,13 @@ export default function LibraryScreen() {
                     {item.tracks.length} {item.tracks.length === 1 ? "track" : "tracks"}
                   </Text>
                 </View>
-                <Icon name="play-circle" size={30} color={colors.brandPrimary} />
+                <Pressable
+                  testID={`playlist-play-${item.id}`}
+                  onPress={() => item.tracks[0] && playNow(item.tracks[0], item.tracks)}
+                  hitSlop={8}
+                >
+                  <Icon name="play-circle" size={34} color={colors.brandPrimary} />
+                </Pressable>
               </Pressable>
             )}
           />

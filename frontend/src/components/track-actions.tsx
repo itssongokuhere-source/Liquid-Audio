@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import {
   createContext,
   useContext,
@@ -45,6 +46,7 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const router = useRouter();
   const { data: library, deviceId } = useLibrary();
 
   const [track, setTrack] = useState<Track | null>(null);
@@ -178,6 +180,21 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
                         {isFav ? "Remove from Favorites" : "Add to Favorites"}
                       </Text>
                     </Pressable>
+
+                    {track.artistHandle ? (
+                      <Pressable
+                        testID="action-view-artist"
+                        style={styles.action}
+                        onPress={() => {
+                          const handle = track.artistHandle;
+                          close();
+                          if (handle) router.push(`/artist/${handle}`);
+                        }}
+                      >
+                        <Icon name="person-outline" size={22} color={colors.onSurface} />
+                        <Text style={styles.actionText}>View artist</Text>
+                      </Pressable>
+                    ) : null}
 
                     <View style={styles.divider} />
                     <Text style={styles.sectionLabel}>Add to playlist</Text>

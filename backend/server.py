@@ -30,7 +30,7 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("liquidaudio")
 
-# Shared async HTTP client + resolved Audius host
+# Shared async HTTP client + resolved Audius hosts
 _http: Optional[httpx.AsyncClient] = None
 _audius_hosts: List[str] = []
 
@@ -38,7 +38,11 @@ _audius_hosts: List[str] = []
 async def get_http() -> httpx.AsyncClient:
     global _http
     if _http is None:
-        _http = httpx.AsyncClient(timeout=20, follow_redirects=True)
+        _http = httpx.AsyncClient(
+            timeout=20,
+            follow_redirects=True,
+            headers={"User-Agent": f"{APP_NAME}/1.0"},
+        )
     return _http
 
 
@@ -68,7 +72,7 @@ async def audius_get(path: str, params: Optional[dict] = None) -> Any:
             r = await http.get(f"{host}/v1{path}", params=params)
             if r.status_code == 200:
                 return r.json().get("data", [])
-            last_err = f"{r.status_code}"
+            last_err = str(r.status_code)
         except Exception as e:
             last_err = str(e)
             continue
@@ -87,9 +91,27 @@ def normalize_track(t: dict) -> Dict[str, Any]:
         "artwork": artwork,
         "duration": int(t.get("duration") or 0),
         "genre": t.get("genre"),
-        "mood": t.get("mood"),
+        "album": None,
+        "previewUrl": None,
         "playCount": int(t.get("play_count") or 0),
         "favoriteCount": int(t.get("favorite_count") or 0),
+    }
+
+
+def normalize_user(u: dict) -> Dict[str, Any]:
+    pic = u.get("profile_picture") or {}
+    cover = u.get("cover_photo") or {}
+    return {
+        "id": str(u.get("id", "")),
+        "name": u.get("name") or u.get("handle") or "Unknown Artist",
+        "handle": u.get("handle"),
+        "image": pic.get("480x480") or pic.get("1000x1000") or pic.get("150x150"),
+        "cover": cover.get("2000x") or cover.get("640x"),
+        "bio": u.get("bio"),
+        "isVerified": bool(u.get("is_verified")),
+        "followerCount": int(u.get("follower_count") or 0),
+        "trackCount": int(u.get("track_count") or 0),
+        "genre": None,
     }
 
 
@@ -103,10 +125,9 @@ async def root():
 
 @api_router.get("/tracks/trending")
 async def trending(genre: Optional[str] = None,
-                   time: str = "week",
-                   limit: int = Query(25, ge=1, le=50)):
-    params = {"time": time, "limit": limit}
-    if genre and genre.lower() not in ("for you", "foryou", "all"):
+                   limit: int = Query(30, ge=1, le=50)):
+    params: Dict[str, Any] = {"time": "week", "limit": limit}
+    if genre and genre.strip().lower() not in ("for you", "foryou", "all", ""):
         params["genre"] = genre
     data = await audius_get("/tracks/trending", params)
     tracks = [normalize_track(t) for t in data if t.get("id")]
@@ -119,6 +140,21 @@ async def search(q: str = Query(..., min_length=1),
     data = await audius_get("/tracks/search", {"query": q, "limit": limit})
     tracks = [normalize_track(t) for t in data if t.get("id") and not t.get("is_delete")]
     return {"tracks": tracks[:limit]}
+
+
+@api_router.get("/artists/{handle}")
+async def artist(handle: str):
+    user = await audius_get(f"/users/handle/{handle}", {})
+    if not user or not isinstance(user, dict):
+        raise HTTPException(status_code=404, detail="Artist not found")
+    uid = user.get("id")
+    tracks_data = await audius_get(f"/users/{uid}/tracks", {"limit": 30, "sort": "plays"})
+    tracks = [
+        normalize_track(t)
+        for t in (tracks_data or [])
+        if t.get("id") and not t.get("is_delete")
+    ]
+    return {"artist": normalize_user(user), "tracks": tracks}
 
 
 @api_router.get("/tracks/{track_id}")
@@ -147,10 +183,7 @@ async def stream_proxy(track_id: str, request: Request):
                 await upstream.aclose()
                 continue
 
-            resp_headers = {
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "public, max-age=3600",
-            }
+            resp_headers = {"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=3600"}
             for h in ("content-length", "content-range"):
                 if h in upstream.headers:
                     resp_headers[h.title()] = upstream.headers[h]
@@ -219,9 +252,17 @@ class TrackPayload(BaseModel):
     id: str
     title: str
     artist: str
+    artistHandle: Optional[str] = None
     artwork: Optional[str] = None
     duration: int = 0
     genre: Optional[str] = None
+    album: Optional[str] = None
+    previewUrl: Optional[str] = None
+
+
+class ReorderBody(BaseModel):
+    device_id: str
+    track_ids: List[str]
 
 
 class FavoriteBody(BaseModel):
@@ -326,6 +367,24 @@ async def remove_playlist_track(playlist_id: str, track_id: str, device_id: str)
             p["tracks"] = [t for t in p["tracks"] if t.get("id") != track_id]
     await db.libraries.update_one(
         {"device_id": device_id},
+        {"$set": {"playlists": lib["playlists"]}},
+    )
+    return {"playlists": lib["playlists"]}
+
+
+@api_router.put("/library/playlist/{playlist_id}/reorder")
+async def reorder_playlist(playlist_id: str, body: ReorderBody):
+    lib = await get_library(body.device_id)
+    order = {tid: i for i, tid in enumerate(body.track_ids)}
+    found = False
+    for p in lib["playlists"]:
+        if p["id"] == playlist_id:
+            found = True
+            p["tracks"].sort(key=lambda t: order.get(t.get("id"), 9999))
+    if not found:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    await db.libraries.update_one(
+        {"device_id": body.device_id},
         {"$set": {"playlists": lib["playlists"]}},
     )
     return {"playlists": lib["playlists"]}

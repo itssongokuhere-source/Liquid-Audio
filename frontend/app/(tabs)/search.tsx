@@ -18,7 +18,7 @@ import { searchTracks } from "@/src/lib/api";
 import { contentBottomPad } from "@/src/lib/layout";
 import { makeStyles, useTheme } from "@/src/theme";
 
-const SUGGESTIONS = ["Lofi", "House", "Techno", "Chill", "Guitar", "Piano", "Jazz", "Beats"];
+const SUGGESTIONS = ["Lo-fi", "House", "Techno", "Chill", "Remix", "Guitar", "Piano", "Beats"];
 
 export default function SearchScreen() {
   const styles = useStyles();

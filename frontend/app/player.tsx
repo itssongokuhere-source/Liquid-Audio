@@ -103,9 +103,16 @@ export default function PlayerScreen() {
             <Text style={styles.title} numberOfLines={2}>
               {current.title}
             </Text>
-            <Text style={styles.artist} numberOfLines={1}>
-              {current.artist}
-            </Text>
+            <Pressable
+              testID="player-artist-link"
+              disabled={!current.artistHandle}
+              onPress={() => current.artistHandle && router.push(`/artist/${current.artistHandle}`)}
+            >
+              <Text style={styles.artist} numberOfLines={1}>
+                {current.artist}
+                {current.artistHandle ? "  ›" : ""}
+              </Text>
+            </Pressable>
           </View>
           <Pressable
             testID="player-favorite"

@@ -11,7 +11,8 @@ export type Track = {
   artwork?: string | null;
   duration: number;
   genre?: string | null;
-  mood?: string | null;
+  album?: string | null;
+  previewUrl?: string | null;
   playCount?: number;
   favoriteCount?: number;
 };
@@ -19,6 +20,18 @@ export type Track = {
 export type Playlist = { id: string; name: string; tracks: Track[] };
 export type Library = { favorites: Track[]; recent: Track[]; playlists: Playlist[] };
 export type Lyrics = { synced: string | null; plain: string | null; instrumental: boolean };
+
+export type Artist = {
+  id: string;
+  name: string;
+  handle?: string | null;
+  image?: string | null;
+  cover?: string | null;
+  bio?: string | null;
+  isVerified: boolean;
+  followerCount: number;
+  trackCount: number;
+};
 
 export function streamUrl(id: string): string {
   return `${API}/tracks/${id}/stream`;
@@ -65,10 +78,17 @@ function slim(t: Track) {
     id: t.id,
     title: t.title,
     artist: t.artist,
+    artistHandle: t.artistHandle ?? null,
     artwork: t.artwork ?? null,
     duration: t.duration ?? 0,
     genre: t.genre ?? null,
+    album: t.album ?? null,
+    previewUrl: t.previewUrl ?? null,
   };
+}
+
+export async function fetchArtist(handle: string): Promise<{ artist: Artist; tracks: Track[] }> {
+  return getJSON(`/artists/${encodeURIComponent(handle)}`);
 }
 
 export async function fetchLibrary(deviceId: string): Promise<Library> {
@@ -108,6 +128,16 @@ export async function removeFromPlaylist(deviceId: string, playlistId: string, t
     `${API}/library/playlist/${playlistId}/track/${trackId}?device_id=${encodeURIComponent(deviceId)}`,
     { method: "DELETE" },
   );
+  if (!res.ok) throw new Error(`Request failed ${res.status}`);
+  return res.json() as Promise<{ playlists: Playlist[] }>;
+}
+
+export async function reorderPlaylist(deviceId: string, playlistId: string, trackIds: string[]) {
+  const res = await fetch(`${API}/library/playlist/${playlistId}/reorder`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device_id: deviceId, track_ids: trackIds }),
+  });
   if (!res.ok) throw new Error(`Request failed ${res.status}`);
   return res.json() as Promise<{ playlists: Playlist[] }>;
 }

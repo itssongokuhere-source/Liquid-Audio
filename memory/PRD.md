@@ -55,8 +55,14 @@ auto updates like big-company apps (delivered via Publish → build flow).
 - Verified by testing agent: 15/15 backend tests + full frontend flows pass.
 
 ## Notes / limitations
-- Full DSP per-band EQ + true background/lock-screen audio require a native build
-  (not Expo Go); the EQ UI persists settings and the visualizer runs live now.
+- **Catalog = Audius (full-length, free, legal).** Investigated the user's request for
+  YouTube Music / mainstream full songs: YouTube now hard-blocks server-side extraction
+  (SABR-only streaming + PO-token/browser challenge) so it can't be shipped reliably or
+  within store policy; iTunes/Apple is preview-only (30s). Audius is the one source that
+  streams **full songs** for free + legally, so the app uses it (verified 11MB / multi-minute
+  streams, player shows full durations). Mainstream Top-40 would require each user's own
+  Spotify/Apple Music Premium + a native build.
+- Full DSP per-band EQ + true background/lock-screen audio require a native build (not Expo Go).
 - Some obscure tracks have no LRCLIB lyrics → graceful "Lyrics not available".
 - Auto/OTA updates ship on the installed build via the Publish flow.
 

@@ -78,7 +78,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     if (loadedIdRef.current === current.id) return;
     loadedIdRef.current = current.id;
     try {
-      player.replace({ uri: streamUrl(current.id) });
+      player.replace({ uri: current.previewUrl || streamUrl(current.id) });
       player.play();
     } catch {
       // ignore transient replace errors
