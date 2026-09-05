@@ -33,8 +33,53 @@ export type Artist = {
   trackCount: number;
 };
 
-export function streamUrl(id: string): string {
-  return `${API}/tracks/${id}/stream`;
+export type StreamQuality = "low" | "high" | "max";
+const QUALITY_BITRATE: Record<StreamQuality, string> = { low: "96", high: "160", max: "320" };
+
+export function streamUrl(id: string, quality: StreamQuality = "max"): string {
+  return `${API}/tracks/${id}/stream?q=${QUALITY_BITRATE[quality]}`;
+}
+
+/** Prefer the direct CDN URL (rewritten to the chosen bitrate); fall back to the proxy. */
+export function playbackUrl(track: Track, quality: StreamQuality = "max"): string {
+  if (track.previewUrl) return track.previewUrl.replace(/_\d+\.mp4/, `_${QUALITY_BITRATE[quality]}.mp4`);
+  return streamUrl(track.id, quality);
+}
+
+export type AppRelease = {
+  id: string;
+  platform: string;
+  version: string;
+  apk_url: string;
+  notes: string;
+  mandatory: boolean;
+  published_at: string;
+};
+
+export async function fetchAppVersion(current: string, platform = "android") {
+  return getJSON<{ latest: AppRelease | null; update_available: boolean }>(
+    `/app/version?platform=${platform}&current=${encodeURIComponent(current)}`,
+  );
+}
+
+export async function fetchReleases(platform = "android") {
+  const d = await getJSON<{ releases: AppRelease[] }>(`/app/releases?platform=${platform}`);
+  return d.releases;
+}
+
+export async function publishRelease(body: {
+  pin: string;
+  version: string;
+  apk_url: string;
+  notes: string;
+}) {
+  return postJSON<{ release: AppRelease }>(`/app/version`, body);
+}
+
+export async function fetchPalette(url: string) {
+  return getJSON<{ accent: string | null; dominant: string | null; background: string | null }>(
+    `/artwork/palette?url=${encodeURIComponent(url)}`,
+  );
 }
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -61,6 +106,17 @@ export async function fetchTrending(genre?: string): Promise<Track[]> {
 
 export async function searchTracks(q: string): Promise<Track[]> {
   const data = await getJSON<{ tracks: Track[] }>(`/tracks/search?q=${encodeURIComponent(q)}`);
+  return data.tracks;
+}
+
+export async function fetchRecommendations(trackId: string, exclude: string[] = []): Promise<Track[]> {
+  const ex = exclude.length ? `&exclude=${encodeURIComponent(exclude.slice(0, 60).join(","))}` : "";
+  const data = await getJSON<{ tracks: Track[] }>(`/tracks/${trackId}/recommendations?limit=20${ex}`);
+  return data.tracks;
+}
+
+export async function fetchRadio(trackId: string): Promise<Track[]> {
+  const data = await getJSON<{ tracks: Track[] }>(`/tracks/${trackId}/radio?limit=40`);
   return data.tracks;
 }
 

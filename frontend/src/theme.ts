@@ -123,17 +123,88 @@ export const setColorScheme = setAppScheme;
 
 Appearance.setColorScheme?.(defaultScheme);
 
+// --- Accent colour override (user preset or adaptive from artwork) ----------
+export const ACCENTS = [
+  { key: "rose", label: "Rose", hex: "#F43F5E" },
+  { key: "ocean", label: "Ocean", hex: "#38BDF8" },
+  { key: "aurora", label: "Aurora", hex: "#34D399" },
+  { key: "gold", label: "Gold", hex: "#FBBF24" },
+  { key: "violet", label: "Violet", hex: "#A78BFA" },
+  { key: "midnight", label: "Midnight", hex: "#94A3B8" },
+] as const;
+export type AccentKey = (typeof ACCENTS)[number]["key"];
+
+let accentHex: string | null = null;
+
+export function setAccent(hex: string | null) {
+  accentHex = hex && /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.toUpperCase() : null;
+  listeners.forEach((l) => l());
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex([r, g, b]: [number, number, number]) {
+  return "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+function mix(a: string, b: string, t: number) {
+  const A = hexToRgb(a);
+  const B = hexToRgb(b);
+  return rgbToHex([A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t]);
+}
+
+function luminance(hex: string) {
+  const [r, g, b] = hexToRgb(hex).map((v) => v / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function withAccent(base: ThemeColors, hex: string, scheme: ColorScheme): ThemeColors {
+  const onBrand = luminance(hex) > 0.6 ? "#0A0A0A" : "#FFFFFF";
+  return {
+    ...base,
+    brand: hex,
+    onBrand,
+    brandPrimary: hex,
+    onBrandPrimary: onBrand,
+    brandSecondary: mix(hex, "#000000", 0.18),
+    onBrandSecondary: onBrand,
+    brandTertiary: scheme === "dark" ? mix(hex, "#000000", 0.72) : mix(hex, "#FFFFFF", 0.82),
+    onBrandTertiary: scheme === "dark" ? mix(hex, "#FFFFFF", 0.7) : mix(hex, "#000000", 0.55),
+  };
+}
+
+const accentCache = new Map<string, ThemeColors>();
+
+function resolveColors(scheme: ColorScheme): ThemeColors {
+  if (!accentHex) return themes[scheme];
+  const key = `${scheme}:${accentHex}`;
+  let c = accentCache.get(key);
+  if (!c) {
+    c = withAccent(themes[scheme], accentHex, scheme);
+    accentCache.set(key, c);
+  }
+  return c;
+}
+
 export function useTheme(): { scheme: ColorScheme; colors: ThemeColors } {
   const system = useColorScheme();
-  const override = useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     subscribe,
-    () => overrideScheme,
-    () => overrideScheme,
+    () => `${overrideScheme ?? "auto"}|${accentHex ?? ""}`,
+    () => `${overrideScheme ?? "auto"}|${accentHex ?? ""}`,
   );
+  const override = snapshot.split("|")[0];
   const chosen: ColorScheme =
-    override ?? (system && themes[system] ? system : defaultScheme);
+    override !== "auto"
+      ? (override as ColorScheme)
+      : system && themes[system as ColorScheme]
+        ? (system as ColorScheme)
+        : defaultScheme;
   const scheme = themes[chosen] ? chosen : "dark";
-  return { scheme, colors: themes[scheme] };
+  return { scheme, colors: resolveColors(scheme) };
 }
 
 export function makeStyles<

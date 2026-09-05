@@ -9,9 +9,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
+import { Text } from "@/src/components/text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAudio } from "@/src/components/audio-context";
@@ -37,6 +37,14 @@ const GENRES = [
   "Malayalam",
 ];
 
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 5) return "Late night listening";
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 export default function HomeScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
@@ -61,16 +69,25 @@ export default function HomeScreen() {
     <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
       <View style={styles.headerTop}>
         <View>
-          <Text style={styles.kicker}>Good vibes</Text>
+          <Text style={styles.kicker}>{greeting()}</Text>
           <Text style={styles.brand}>LiquidAudio</Text>
         </View>
-        <Pressable
-          testID="home-search-shortcut"
-          onPress={() => router.push("/search")}
-          style={styles.iconBtn}
-        >
-          <Icon name="search" size={22} color={colors.onSurface} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            testID="home-search-shortcut"
+            onPress={() => router.push("/search")}
+            style={styles.iconBtn}
+          >
+            <Icon name="search" size={22} color={colors.onSurface} />
+          </Pressable>
+          <Pressable
+            testID="home-settings"
+            onPress={() => router.push("/settings")}
+            style={styles.iconBtn}
+          >
+            <Icon name="settings-outline" size={22} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
       <ScrollView
         horizontal
@@ -231,6 +248,7 @@ const useStyles = makeStyles((colors) => ({
   },
   kicker: { color: colors.muted, fontSize: 13, fontWeight: "600" },
   brand: { color: colors.onSurface, fontSize: 28, fontWeight: "800", letterSpacing: -0.5 },
+  headerActions: { flexDirection: "row", gap: 8 },
   iconBtn: {
     width: 44,
     height: 44,

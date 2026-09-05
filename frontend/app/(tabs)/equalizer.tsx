@@ -6,9 +6,9 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  Text,
   View,
 } from "react-native";
+import { Text } from "@/src/components/text";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,

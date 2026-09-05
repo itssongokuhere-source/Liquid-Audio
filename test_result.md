@@ -101,3 +101,54 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+## Iteration 5 — Queue power features + Settings/Updates/Theming (main agent, 2026-09-05)
+backend:
+  - task: "GET /api/tracks/{id}/recommendations (JioSaavn reco.getreco, exclude param)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    needs_retesting: true
+  - task: "GET /api/tracks/{id}/radio (endless mix ~40 tracks)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    needs_retesting: true
+  - task: "GET /api/app/version?current=x.y.z, POST /api/app/version (pin=2468), GET /api/app/releases"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    needs_retesting: true
+  - task: "GET /api/artwork/palette?url= (dominant/vibrant colours via Pillow)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    needs_retesting: true
+  - task: "GET /api/tracks/{id}/stream?q=96|160|320 (quality-aware proxy, Range)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    needs_retesting: true
+frontend:
+  - task: "Track actions sheet: Play next / Add to queue / Start radio (animated tiles)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/track-actions.tsx"
+    needs_retesting: true
+  - task: "Queue screen: reorder (long-press ≡ drag), swipe-left remove, bump-to-next, clear, Autoplay toggle + Similar songs list"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/queue.tsx, /app/frontend/src/components/queue-list.tsx"
+    needs_retesting: true
+  - task: "Settings screen (/settings): updates card, check for updates, quality/crossfade/gapless/autoplay/wifi-only, theme, adaptive colours, accent swatches, app icon grid, storage, about, hidden dev publish (tap version 5x)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/settings.tsx"
+    needs_retesting: true
+  - task: "Inter font applied globally via @/src/components/text wrapper"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/text.tsx"
+    needs_retesting: true
+agent_communication:
+  - agent: "main"
+    message: "No auth. ADMIN_PIN=2468. Web preview cannot play audio (expected). Alternate app icons + APK install are native-only (expected toast on web). Delete any test releases you publish (db.app_releases) at the end so users don't see a fake update."

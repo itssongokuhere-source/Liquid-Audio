@@ -4,10 +4,10 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
-  Text,
   TextInput,
   View,
 } from "react-native";
+import { Text } from "@/src/components/text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAudio } from "@/src/components/audio-context";
@@ -141,7 +141,7 @@ const useStyles = makeStyles((colors) => ({
     paddingHorizontal: 14,
     height: 48,
   },
-  input: { flex: 1, color: colors.onSurface, fontSize: 16 },
+  input: { flex: 1, color: colors.onSurface, fontSize: 16, fontFamily: "Inter-Regular" },
   suggestWrap: { padding: 16 },
   suggestLabel: { color: colors.muted, fontSize: 14, fontWeight: "600", marginBottom: 14 },
   suggestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },

@@ -24,12 +24,14 @@ type DownloadsMap = Record<string, DownloadEntry>;
 
 type DownloadsValue = {
   downloads: Track[];
+  usedBytes: number;
   isDownloaded: (id: string) => boolean;
   isDownloading: (id: string) => boolean;
   getLocalUri: (id: string) => string | null;
   downloadTrack: (track: Track) => Promise<void>;
   downloadMany: (tracks: Track[]) => Promise<void>;
   removeDownload: (id: string) => Promise<void>;
+  clearAll: () => Promise<void>;
 };
 
 const DownloadsContext = createContext<DownloadsValue | null>(null);
@@ -132,17 +134,51 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     [map],
   );
 
+  const [usedBytes, setUsedBytes] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let total = 0;
+      for (const e of Object.values(map)) {
+        try {
+          const info = await FileSystem.getInfoAsync(e.localUri);
+          if (info.exists && "size" in info) total += info.size ?? 0;
+        } catch {
+          // ignore
+        }
+      }
+      if (alive) setUsedBytes(total);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [map]);
+
+  const clearAll = useCallback(async () => {
+    for (const e of Object.values(mapRef.current)) {
+      try {
+        await FileSystem.deleteAsync(e.localUri, { idempotent: true });
+      } catch {
+        // ignore
+      }
+    }
+    persist({});
+    toast("All downloads removed", "success");
+  }, [persist, toast]);
+
   const value = useMemo<DownloadsValue>(
     () => ({
       downloads,
+      usedBytes,
       isDownloaded,
       isDownloading,
       getLocalUri,
       downloadTrack,
       downloadMany,
       removeDownload,
+      clearAll,
     }),
-    [downloads, isDownloaded, isDownloading, getLocalUri, downloadTrack, downloadMany, removeDownload],
+    [downloads, usedBytes, isDownloaded, isDownloading, getLocalUri, downloadTrack, downloadMany, removeDownload, clearAll],
   );
 
   return <DownloadsContext.Provider value={value}>{children}</DownloadsContext.Provider>;

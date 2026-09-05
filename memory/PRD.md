@@ -68,6 +68,32 @@ auto updates like big-company apps (delivered via Publish → build flow).
 - Full DSP per-band EQ + true background/lock-screen audio require a native build (not Expo Go).
 - Auto/OTA updates ship on the installed build via the Publish flow.
 
+## Implemented (2026-09-05, iteration 5)
+- **Queue power features**: every song's ⋯ sheet has *Play next*, *Add to queue*, *Start radio*
+  (endless mix from `/api/tracks/{id}/radio`). Up Next screen: long-press ≡ drag-to-reorder,
+  swipe-left remove, bump-to-next, clear queue, **Autoplay** toggle + *Similar songs*
+  (`/api/tracks/{id}/recommendations`, JioSaavn reco.getreco). When the queue ends and autoplay is
+  on, playback continues seamlessly into recommendations. Queue badge on player.
+- **Settings screen** (`/settings`, gear on Home + Library): App updates (release manifest at
+  `/api/app/version`, silent OTA via expo-updates when enabled, Android direct **download & install**
+  via expo-file-system + expo-intent-launcher; hidden admin *Publish a release* form — tap version 5×,
+  PIN = `ADMIN_PIN` env, default 2468), Playback (quality 96/160/320 via `?q=`, crossfade fade
+  in/out, gapless prefetch, autoplay, Wi‑Fi-only via expo-network), Appearance (Auto/Light/Dark,
+  **Adaptive colours** from artwork via `/api/artwork/palette`, 6 accent presets, **6 app icons**
+  via expo-alternate-app-icons — native build only), Storage (downloads size, remove all, clear image
+  cache), About (version/build, what's new).
+- **Typography**: Inter (Regular→ExtraBold) loaded with expo-font; all `Text` routed through
+  `@/src/components/text` which maps fontWeight → Inter face.
+- **Premium motion**: `AnimatedPressable` (UI-thread spring, 120 Hz friendly), `GlassSwitch`,
+  `PlayingBars`, staggered FadeInDown sheets, Reanimated gestures on the queue.
+- Generated icon set in `assets/icons/` (scripts/gen_icons.py). App version 1.1.0 / versionCode 2.
+- Verified by testing agent: 14/14 backend tests + all frontend flows (iteration_5.json).
+
+## How to ship an update to users
+1. Publish → build the new APK on Emergent, upload it to KiwiFile (or any direct link host).
+2. In the app: Settings → About → tap the version row 5× → fill version, APK link, notes, PIN → Publish.
+3. Every installed app detects it on launch (toast) and Settings shows *Download & install*.
+
 ## Backlog
 - P1: apply saved EQ preset to real DSP on native build (per-band audio processing).
 - P1: artist/album detail pages; playlist detail screen with reorder & remove.

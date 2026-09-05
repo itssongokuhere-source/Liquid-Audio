@@ -54,7 +54,7 @@ def _clean(s: Optional[str]) -> str:
     return html_lib.unescape(s or "").replace("&quot;", '"').strip()
 
 
-def decrypt_url(enc: Optional[str]) -> Optional[str]:
+def decrypt_url(enc: Optional[str], quality: str = "320") -> Optional[str]:
     if not enc:
         return None
     try:
@@ -62,7 +62,8 @@ def decrypt_url(enc: Optional[str]) -> Optional[str]:
         dec = cipher.decrypt(base64.b64decode(enc))
         dec = dec[: -dec[-1]]  # PKCS5 unpad
         url = dec.decode("utf-8", "ignore")
-        return url.replace("_96.mp4", "_320.mp4")
+        q = quality if quality in ("96", "160", "320") else "320"
+        return url.replace("_96.mp4", f"_{q}.mp4")
     except Exception as e:
         logger.warning("decrypt failed: %s", e)
         return None
@@ -200,14 +201,112 @@ async def track_detail(track_id: str):
     return {"track": normalize_song(songs[0])}
 
 
+# ---------------------------------------------------------------------------
+# Recommendations / Autoplay / Radio
+# ---------------------------------------------------------------------------
+async def _reco_songs(pid: str) -> List[dict]:
+    """JioSaavn 'similar songs' for a track (requires android ctx)."""
+    try:
+        data = await js_get({"__call": "reco.getreco", "pid": pid, "ctx": "android"})
+    except Exception as e:
+        logger.warning("reco failed for %s: %s", pid, e)
+        return []
+    items: List[Any] = []
+    if isinstance(data, dict):
+        items = data.get(pid) or next((v for v in data.values() if isinstance(v, list)), [])
+    elif isinstance(data, list):
+        items = data
+    return [s for s in items if isinstance(s, dict) and s.get("id")]
+
+
+async def _artist_top_songs(artist_id: Optional[str]) -> List[dict]:
+    if not artist_id:
+        return []
+    try:
+        data = await js_get({"__call": "artist.getArtistPageDetails", "artistId": artist_id})
+    except Exception:
+        return []
+    top = data.get("topSongs") if isinstance(data, dict) else None
+    if isinstance(top, dict):
+        return top.get("songs") or top.get("data") or []
+    return top if isinstance(top, list) else []
+
+
+def _dedupe(songs: List[dict], exclude: set) -> List[dict]:
+    out, seen = [], set(exclude)
+    for s in songs:
+        sid = str(s.get("id", ""))
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+        out.append(s)
+    return out
+
+
+@api_router.get("/tracks/{track_id}/recommendations")
+async def recommendations(track_id: str,
+                          exclude: Optional[str] = None,
+                          limit: int = Query(20, ge=1, le=50)):
+    """Similar songs for the autoplay section of the queue (YouTube-Music style)."""
+    excluded = {track_id} | {e for e in (exclude or "").split(",") if e}
+    recs = await _reco_songs(track_id)
+    if len(recs) < 8:
+        try:
+            detail = await js_get({"__call": "song.getDetails", "pids": track_id})
+            seed = _songs_from(detail, track_id)
+            if seed:
+                amap = (seed[0].get("more_info") or {}).get("artistMap") or {}
+                primary = amap.get("primary_artists") or amap.get("artists") or []
+                if primary:
+                    recs += await _artist_top_songs(str(primary[0].get("id")))
+        except Exception as e:
+            logger.warning("reco fallback failed: %s", e)
+    tracks = [normalize_song(s) for s in _dedupe(recs, excluded)]
+    return {"tracks": tracks[:limit]}
+
+
+@api_router.get("/tracks/{track_id}/radio")
+async def radio(track_id: str, limit: int = Query(40, ge=5, le=60)):
+    """Endless-mix seed: similar songs, their similar songs and the artist's top songs."""
+    import asyncio
+    import random
+
+    first = await _reco_songs(track_id)
+    fan_out = await asyncio.gather(*[_reco_songs(str(s["id"])) for s in first[:3]])
+    artist_songs: List[dict] = []
+    try:
+        detail = await js_get({"__call": "song.getDetails", "pids": track_id})
+        seed = _songs_from(detail, track_id)
+        if seed:
+            amap = (seed[0].get("more_info") or {}).get("artistMap") or {}
+            primary = amap.get("primary_artists") or amap.get("artists") or []
+            if primary:
+                artist_songs = await _artist_top_songs(str(primary[0].get("id")))
+    except Exception as e:
+        logger.warning("radio seed failed: %s", e)
+
+    second = [s for group in fan_out for s in group]
+    random.shuffle(second)
+    random.shuffle(artist_songs)
+    # Interleave: keep the closest matches first, then blend deeper recs + artist songs
+    blended: List[dict] = list(first[:8])
+    pools = [first[8:], second, artist_songs]
+    while any(pools) and len(blended) < limit * 2:
+        for p in pools:
+            if p:
+                blended.append(p.pop(0))
+    tracks = [normalize_song(s) for s in _dedupe(blended, {track_id})]
+    return {"tracks": tracks[:limit]}
+
+
 @api_router.get("/tracks/{track_id}/stream")
-async def stream_proxy(track_id: str, request: Request):
+async def stream_proxy(track_id: str, request: Request, q: str = "320"):
     http = await get_http()
     data = await js_get({"__call": "song.getDetails", "pids": track_id})
     songs = _songs_from(data, track_id)
     if not songs:
         raise HTTPException(status_code=404, detail="Track not found")
-    url = decrypt_url((songs[0].get("more_info") or {}).get("encrypted_media_url"))
+    url = decrypt_url((songs[0].get("more_info") or {}).get("encrypted_media_url"), q)
     if not url:
         raise HTTPException(status_code=502, detail="Audio unavailable")
 
@@ -434,6 +533,121 @@ async def reorder_playlist(playlist_id: str, body: ReorderBody):
         {"$set": {"playlists": lib["playlists"]}},
     )
     return {"playlists": lib["playlists"]}
+
+
+# ---------------------------------------------------------------------------
+# App releases (in-app updater) + artwork palette (adaptive UI colours)
+# ---------------------------------------------------------------------------
+ADMIN_PIN = os.environ.get("ADMIN_PIN", "2468")
+APP_VERSION_FALLBACK = os.environ.get("APP_VERSION", "1.1.0")
+
+
+class ReleaseBody(BaseModel):
+    pin: str
+    version: str
+    apk_url: str
+    notes: str = ""
+    platform: str = "android"
+    mandatory: bool = False
+
+
+def _ver_tuple(v: str):
+    parts = []
+    for p in (v or "0").split("."):
+        num = "".join(ch for ch in p if ch.isdigit())
+        parts.append(int(num) if num else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+@api_router.get("/app/version")
+async def app_version(platform: str = "android", current: Optional[str] = None):
+    doc = await db.app_releases.find_one(
+        {"platform": platform}, {"_id": 0}, sort=[("published_at", -1)]
+    )
+    if not doc:
+        return {"latest": None, "update_available": False, "current": current}
+    available = bool(current) and _ver_tuple(doc["version"]) > _ver_tuple(current)
+    return {"latest": doc, "update_available": available, "current": current}
+
+
+@api_router.get("/app/releases")
+async def app_releases(platform: str = "android", limit: int = Query(10, ge=1, le=50)):
+    cur = db.app_releases.find({"platform": platform}, {"_id": 0}).sort("published_at", -1).limit(limit)
+    return {"releases": [r async for r in cur]}
+
+
+@api_router.post("/app/version")
+async def publish_release(body: ReleaseBody):
+    if body.pin != ADMIN_PIN:
+        raise HTTPException(status_code=403, detail="Invalid PIN")
+    if not body.apk_url.startswith("http"):
+        raise HTTPException(status_code=400, detail="apk_url must be a direct http(s) link")
+    rel = {
+        "id": str(uuid.uuid4()),
+        "platform": body.platform,
+        "version": body.version.strip().lstrip("v"),
+        "apk_url": body.apk_url.strip(),
+        "notes": body.notes.strip(),
+        "mandatory": body.mandatory,
+        "published_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.app_releases.insert_one(dict(rel))
+    return {"release": rel}
+
+
+_palette_cache: Dict[str, dict] = {}
+
+
+def _extract_palette(raw: bytes) -> dict:
+    from PIL import Image
+    import io
+    import colorsys
+
+    im = Image.open(io.BytesIO(raw)).convert("RGB").resize((48, 48))
+    counts: Dict[tuple, int] = {}
+    for px in im.getdata():
+        key = (px[0] // 24 * 24, px[1] // 24 * 24, px[2] // 24 * 24)
+        counts[key] = counts.get(key, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    dominant = ranked[0][0]
+
+    def score(c):
+        h, l, s = colorsys.rgb_to_hls(c[0] / 255, c[1] / 255, c[2] / 255)
+        return s * (1 - abs(l - 0.5) * 1.6)
+
+    vibrant = max((c for c, n in ranked[:24]), key=score, default=dominant)
+    h, l, s = colorsys.rgb_to_hls(vibrant[0] / 255, vibrant[1] / 255, vibrant[2] / 255)
+    # keep accent readable on dark UI: lift lightness/saturation a bit
+    l = min(0.62, max(0.45, l))
+    s = min(1.0, max(0.55, s))
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    accent = "#%02X%02X%02X" % (int(r * 255), int(g * 255), int(b * 255))
+    dark = "#%02X%02X%02X" % tuple(int(v * 0.35) for v in dominant)
+    return {
+        "accent": accent,
+        "dominant": "#%02X%02X%02X" % dominant,
+        "background": dark,
+    }
+
+
+@api_router.get("/artwork/palette")
+async def artwork_palette(url: str):
+    if url in _palette_cache:
+        return _palette_cache[url]
+    http = await get_http()
+    try:
+        r = await http.get(url)
+        r.raise_for_status()
+        pal = _extract_palette(r.content)
+    except Exception as e:
+        logger.warning("palette failed: %s", e)
+        pal = {"accent": None, "dominant": None, "background": None}
+    if len(_palette_cache) > 500:
+        _palette_cache.clear()
+    _palette_cache[url] = pal
+    return pal
 
 
 app.include_router(api_router)

@@ -2,24 +2,34 @@
   "expo": {
     "name": "LiquidAudio",
     "slug": "frontend",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icons/rose-square.png",
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.rhythmglassui.wnm9ul",
+      "buildNumber": "2",
       "infoPlist": {
         "UIBackgroundModes": ["audio"]
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/icons/rose-foreground.png",
+        "backgroundImage": "./assets/icons/rose-background.png",
+        "backgroundColor": "#8B103C"
       },
-      "package": "com.emergent.rhythmglassui.wnm9ul"
+      "package": "com.emergent.rhythmglassui.wnm9ul",
+      "versionCode": 2,
+      "permissions": [
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -48,7 +58,57 @@
           "enableBackgroundPlayback": true
         }
       ],
-      "@react-native-vector-icons/ionicons"
+      "@react-native-vector-icons/ionicons",
+      [
+        "expo-alternate-app-icons",
+        [
+          {
+            "name": "ocean",
+            "ios": "./assets/icons/ocean-square.png",
+            "android": {
+              "foregroundImage": "./assets/icons/ocean-foreground.png",
+              "backgroundImage": "./assets/icons/ocean-background.png",
+              "backgroundColor": "#2563EB"
+            }
+          },
+          {
+            "name": "aurora",
+            "ios": "./assets/icons/aurora-square.png",
+            "android": {
+              "foregroundImage": "./assets/icons/aurora-foreground.png",
+              "backgroundImage": "./assets/icons/aurora-background.png",
+              "backgroundColor": "#0E7490"
+            }
+          },
+          {
+            "name": "midnight",
+            "ios": "./assets/icons/midnight-square.png",
+            "android": {
+              "foregroundImage": "./assets/icons/midnight-foreground.png",
+              "backgroundImage": "./assets/icons/midnight-background.png",
+              "backgroundColor": "#1E293B"
+            }
+          },
+          {
+            "name": "gold",
+            "ios": "./assets/icons/gold-square.png",
+            "android": {
+              "foregroundImage": "./assets/icons/gold-foreground.png",
+              "backgroundImage": "./assets/icons/gold-background.png",
+              "backgroundColor": "#B45309"
+            }
+          },
+          {
+            "name": "violet",
+            "ios": "./assets/icons/violet-square.png",
+            "android": {
+              "foregroundImage": "./assets/icons/violet-foreground.png",
+              "backgroundImage": "./assets/icons/violet-background.png",
+              "backgroundColor": "#7C3AED"
+            }
+          }
+        ]
+      ]
     ],
     "experiments": {
       "typedRoutes": true

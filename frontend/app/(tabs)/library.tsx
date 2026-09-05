@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { FlatList, Pressable, ScrollView, Text, View } from "react-native";
+import { FlatList, Pressable, ScrollView, View } from "react-native";
+import { Text } from "@/src/components/text";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -11,24 +12,10 @@ import { useTrackActions } from "@/src/components/track-actions";
 import type { Track } from "@/src/lib/api";
 import { contentBottomPad } from "@/src/lib/layout";
 import { useLibrary } from "@/src/lib/hooks";
-import { storage } from "@/src/utils/storage";
-import {
-  getAppScheme,
-  makeStyles,
-  setAppScheme,
-  useTheme,
-  type ColorScheme,
-} from "@/src/theme";
+import { makeStyles, useTheme } from "@/src/theme";
 
-const SCHEME_KEY = "liquidaudio.scheme";
 type Tab = "Favorites" | "Recent" | "Downloads" | "Playlists";
 const TABS: Tab[] = ["Favorites", "Recent", "Downloads", "Playlists"];
-
-const THEME_OPTIONS: { key: string; label: string; icon: IconName; scheme: ColorScheme | null }[] = [
-  { key: "system", label: "Auto", icon: "phone-portrait-outline", scheme: null },
-  { key: "light", label: "Light", icon: "sunny-outline", scheme: "light" },
-  { key: "dark", label: "Dark", icon: "moon-outline", scheme: "dark" },
-];
 
 export default function LibraryScreen() {
   const styles = useStyles();
@@ -41,17 +28,10 @@ export default function LibraryScreen() {
   const router = useRouter();
 
   const [tab, setTab] = useState<Tab>("Favorites");
-  const [themePref, setThemePref] = useState<string>(getAppScheme() ?? "system");
 
   const favorites = (library?.favorites ?? []) as Track[];
   const recent = (library?.recent ?? []) as Track[];
   const playlists = library?.playlists ?? [];
-
-  const applyTheme = (opt: (typeof THEME_OPTIONS)[number]) => {
-    setThemePref(opt.key);
-    setAppScheme(opt.scheme);
-    storage.setItem(SCHEME_KEY, opt.key);
-  };
 
   const activeList =
     tab === "Favorites" ? favorites : tab === "Downloads" ? downloads : recent;
@@ -59,29 +39,15 @@ export default function LibraryScreen() {
   return (
     <View style={styles.container} testID="library-screen">
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <Text style={styles.title}>Your Library</Text>
-
-        <View style={styles.themeRow}>
-          {THEME_OPTIONS.map((opt) => {
-            const active = themePref === opt.key;
-            return (
-              <Pressable
-                key={opt.key}
-                testID={`theme-${opt.key}`}
-                onPress={() => applyTheme(opt)}
-                style={[styles.themeBtn, active && styles.themeBtnActive]}
-              >
-                <Icon
-                  name={opt.icon}
-                  size={16}
-                  color={active ? colors.onBrandPrimary : colors.onSurfaceTertiary}
-                />
-                <Text style={[styles.themeText, active && styles.themeTextActive]}>
-                  {opt.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Your Library</Text>
+          <Pressable
+            testID="library-settings"
+            onPress={() => router.push("/settings")}
+            style={styles.settingsBtn}
+          >
+            <Icon name="settings-outline" size={22} color={colors.onSurface} />
+          </Pressable>
         </View>
 
         <ScrollView
@@ -211,33 +177,26 @@ function EmptyState({ icon, text, hint }: { icon: IconName; text: string; hint: 
 const useStyles = makeStyles((colors) => ({
   container: { flex: 1, backgroundColor: colors.surface },
   header: { paddingHorizontal: 16, paddingBottom: 10 },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
   title: {
     color: colors.onSurface,
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.5,
-    marginBottom: 14,
   },
-  themeRow: {
-    flexDirection: "row",
-    gap: 8,
-    backgroundColor: colors.surfaceTertiary,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
-  },
-  themeBtn: {
-    flex: 1,
-    flexDirection: "row",
+  settingsBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 9,
-    borderRadius: 9,
+    backgroundColor: colors.surfaceTertiary,
   },
-  themeBtnActive: { backgroundColor: colors.brandPrimary },
-  themeText: { color: colors.onSurfaceTertiary, fontSize: 13, fontWeight: "600" },
-  themeTextActive: { color: colors.onBrandPrimary },
   tabRow: { gap: 8, height: 56, alignItems: "center", paddingRight: 16 },
   chip: {
     height: 36,

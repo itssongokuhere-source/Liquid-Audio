@@ -1,6 +1,7 @@
 import { Image } from "expo-image";
 import { memo } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text } from "@/src/components/text";
 
 import { Icon } from "@/src/components/icon";
 import type { Track } from "@/src/lib/api";

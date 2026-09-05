@@ -14,16 +14,19 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from "react-native";
+import { Text } from "@/src/components/text";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AnimatedPressable } from "@/src/components/animated-pressable";
+import { useAudio } from "@/src/components/audio-context";
 import { Glass } from "@/src/components/glass";
 import { useDownloads } from "@/src/components/downloads-context";
-import { Icon } from "@/src/components/icon";
+import { Icon, type IconName } from "@/src/components/icon";
 import { useToast } from "@/src/components/toast";
 import {
   addToPlaylist,
@@ -50,6 +53,7 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { data: library, deviceId } = useLibrary();
   const { isDownloaded, isDownloading, downloadTrack, removeDownload } = useDownloads();
+  const { playNext, addToQueue, startRadio, radioLoading, hasTrack } = useAudio();
 
   const [track, setTrack] = useState<Track | null>(null);
   const [creating, setCreating] = useState(false);
@@ -165,66 +169,100 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
                   </View>
                 ) : (
                   <>
-                    <Pressable
+                    <View style={styles.quickRow}>
+                      <QuickAction
+                        testID="action-play-next"
+                        icon="play-skip-forward"
+                        label="Play next"
+                        delay={0}
+                        color={colors.brandPrimary}
+                        onPress={() => {
+                          playNext(track);
+                          toast(hasTrack ? "Playing next" : "Now playing", "success");
+                          close();
+                        }}
+                      />
+                      <QuickAction
+                        testID="action-add-queue"
+                        icon="list"
+                        label="Add to queue"
+                        delay={40}
+                        color={colors.onSurface}
+                        onPress={() => {
+                          addToQueue(track);
+                          toast(hasTrack ? "Added to queue" : "Now playing", "success");
+                          close();
+                        }}
+                      />
+                      <QuickAction
+                        testID="action-start-radio"
+                        icon={radioLoading ? "hourglass-outline" : "radio-outline"}
+                        label={radioLoading ? "Tuning…" : "Start radio"}
+                        delay={80}
+                        color={colors.onSurface}
+                        disabled={radioLoading}
+                        onPress={async () => {
+                          try {
+                            await startRadio(track);
+                            toast(`Radio based on ${track.title}`, "success");
+                            close();
+                          } catch {
+                            toast("Couldn't start radio", "error");
+                          }
+                        }}
+                      />
+                    </View>
+
+                    <ActionRow
                       testID="action-favorite"
-                      style={styles.action}
+                      delay={120}
+                      icon={isFav ? "heart" : "heart-outline"}
+                      iconColor={isFav ? colors.brandPrimary : colors.onSurface}
+                      label={isFav ? "Remove from Favorites" : "Add to Favorites"}
                       onPress={() => {
                         haptic.selection();
                         favMutation.mutate();
                       }}
-                    >
-                      <Icon
-                        name={isFav ? "heart" : "heart-outline"}
-                        size={22}
-                        color={isFav ? colors.brandPrimary : colors.onSurface}
-                      />
-                      <Text style={styles.actionText}>
-                        {isFav ? "Remove from Favorites" : "Add to Favorites"}
-                      </Text>
-                    </Pressable>
+                    />
 
                     {track.artistHandle ? (
-                      <Pressable
+                      <ActionRow
                         testID="action-view-artist"
-                        style={styles.action}
+                        delay={160}
+                        icon="person-outline"
+                        iconColor={colors.onSurface}
+                        label="View artist"
                         onPress={() => {
                           const handle = track.artistHandle;
                           close();
                           if (handle) router.push(`/artist/${handle}`);
                         }}
-                      >
-                        <Icon name="person-outline" size={22} color={colors.onSurface} />
-                        <Text style={styles.actionText}>View artist</Text>
-                      </Pressable>
+                      />
                     ) : null}
 
-                    <Pressable
+                    <ActionRow
                       testID="action-download"
-                      style={styles.action}
+                      delay={200}
+                      icon={
+                        isDownloaded(track.id)
+                          ? "checkmark-circle"
+                          : isDownloading(track.id)
+                            ? "cloud-download"
+                            : "download-outline"
+                      }
+                      iconColor={isDownloaded(track.id) ? colors.brandPrimary : colors.onSurface}
+                      label={
+                        isDownloaded(track.id)
+                          ? "Remove download"
+                          : isDownloading(track.id)
+                            ? "Downloading…"
+                            : "Download"
+                      }
                       onPress={() => {
                         if (isDownloaded(track.id)) removeDownload(track.id);
                         else downloadTrack(track);
                       }}
-                    >
-                      <Icon
-                        name={
-                          isDownloaded(track.id)
-                            ? "checkmark-circle"
-                            : isDownloading(track.id)
-                              ? "cloud-download"
-                              : "download-outline"
-                        }
-                        size={22}
-                        color={isDownloaded(track.id) ? colors.brandPrimary : colors.onSurface}
-                      />
-                      <Text style={styles.actionText}>
-                        {isDownloaded(track.id)
-                          ? "Remove download"
-                          : isDownloading(track.id)
-                            ? "Downloading…"
-                            : "Download"}
-                      </Text>
-                    </Pressable>
+                    />
 
                     <View style={styles.divider} />
                     <Text style={styles.sectionLabel}>Add to playlist</Text>
@@ -232,32 +270,29 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
                       {playlists.length === 0 ? (
                         <Text style={styles.emptyText}>No playlists yet</Text>
                       ) : (
-                        playlists.map((p) => (
-                          <Pressable
+                        playlists.map((p, i) => (
+                          <ActionRow
                             key={p.id}
                             testID={`add-to-playlist-${p.id}`}
-                            style={styles.action}
+                            delay={240 + i * 30}
+                            icon="musical-notes-outline"
+                            iconColor={colors.muted}
+                            label={p.name}
+                            trailing={String(p.tracks.length)}
                             onPress={() => addMutation.mutate(p.id)}
-                          >
-                            <Icon name="list" size={20} color={colors.muted} />
-                            <Text style={styles.actionText} numberOfLines={1}>
-                              {p.name}
-                            </Text>
-                            <Text style={styles.count}>{p.tracks.length}</Text>
-                          </Pressable>
+                          />
                         ))
                       )}
                     </ScrollView>
-                    <Pressable
+                    <ActionRow
                       testID="action-create-playlist"
-                      style={styles.action}
+                      delay={280}
+                      icon="add-circle-outline"
+                      iconColor={colors.brandPrimary}
+                      label="Create new playlist"
+                      labelColor={colors.brandPrimary}
                       onPress={() => setCreating(true)}
-                    >
-                      <Icon name="add-circle-outline" size={22} color={colors.brandPrimary} />
-                      <Text style={[styles.actionText, { color: colors.brandPrimary }]}>
-                        Create new playlist
-                      </Text>
-                    </Pressable>
+                    />
                   </>
                 )}
               </>
@@ -266,6 +301,73 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
         </KeyboardAvoidingView>
       </Modal>
     </TrackActionsContext.Provider>
+  );
+}
+
+function QuickAction({
+  icon,
+  label,
+  color,
+  delay,
+  onPress,
+  disabled,
+  testID,
+}: {
+  icon: IconName;
+  label: string;
+  color: string;
+  delay: number;
+  onPress: () => void;
+  disabled?: boolean;
+  testID: string;
+}) {
+  const styles = useStyles();
+  return (
+    <Animated.View entering={FadeInDown.delay(delay).springify().damping(18).stiffness(220)} style={{ flex: 1 }}>
+      <AnimatedPressable testID={testID} onPress={onPress} disabled={disabled} scaleTo={0.92} style={styles.quick}>
+        <View style={styles.quickIcon}>
+          <Icon name={icon} size={22} color={color} />
+        </View>
+        <Text style={styles.quickLabel} numberOfLines={1}>
+          {label}
+        </Text>
+      </AnimatedPressable>
+    </Animated.View>
+  );
+}
+
+function ActionRow({
+  icon,
+  iconColor,
+  label,
+  labelColor,
+  trailing,
+  delay,
+  onPress,
+  testID,
+}: {
+  icon: IconName;
+  iconColor: string;
+  label: string;
+  labelColor?: string;
+  trailing?: string;
+  delay: number;
+  onPress: () => void;
+  testID: string;
+}) {
+  const styles = useStyles();
+  return (
+    <Animated.View entering={FadeInDown.delay(delay).springify().damping(18).stiffness(220)}>
+      <AnimatedPressable testID={testID} onPress={onPress} scaleTo={0.97} style={styles.action}>
+        <View style={styles.iconTile}>
+          <Icon name={icon} size={20} color={iconColor} />
+        </View>
+        <Text style={[styles.actionText, labelColor ? { color: labelColor } : null]} numberOfLines={1}>
+          {label}
+        </Text>
+        {trailing ? <Text style={styles.count}>{trailing}</Text> : null}
+      </AnimatedPressable>
+    </Animated.View>
   );
 }
 
@@ -289,15 +391,43 @@ const useStyles = makeStyles((colors) => ({
     backgroundColor: colors.borderStrong,
     marginBottom: 16,
   },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
   art: { width: 56, height: 56, borderRadius: 12, backgroundColor: colors.surfaceTertiary },
   title: { color: colors.onSurface, fontSize: 16, fontWeight: "700" },
   artist: { color: colors.muted, fontSize: 13, marginTop: 2 },
+  quickRow: { flexDirection: "row", gap: 10, marginBottom: 8 },
+  quick: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.glassBorder,
+  },
+  quickIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+  },
+  quickLabel: { color: colors.onSurface, fontSize: 12, fontWeight: "700" },
   action: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    paddingVertical: 14,
+    paddingVertical: 9,
+  },
+  iconTile: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceTertiary,
   },
   actionText: { color: colors.onSurface, fontSize: 15, fontWeight: "600", flex: 1 },
   count: { color: colors.muted, fontSize: 13 },
@@ -315,6 +445,7 @@ const useStyles = makeStyles((colors) => ({
   emptyText: { color: colors.muted, fontSize: 14, paddingVertical: 12 },
   createRow: { flexDirection: "row", gap: 10, alignItems: "center", paddingVertical: 8 },
   input: {
+    fontFamily: "Inter-Regular",
     flex: 1,
     backgroundColor: colors.surfaceTertiary,
     borderRadius: 12,
