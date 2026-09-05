@@ -1,17 +1,19 @@
 import { Image } from "expo-image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Switch,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Text } from "@/src/components/text";
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,7 +51,6 @@ const EFFECTS = [
   { key: "loudness", label: "Loudness", icon: "volume-high-outline" as const },
 ];
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export default function EqualizerScreen() {
   const styles = useStyles();
@@ -244,42 +245,72 @@ function Fader({
   thumb: string;
 }) {
   const usable = FADER_H - THUMB;
-  const startRef = useRef(value);
-  const valueRef = useRef(value);
-  valueRef.current = value;
+  // Live value lives on the UI thread so the thumb follows the finger at native refresh rate.
+  const live = useSharedValue(value);
+  const start = useSharedValue(value);
+  const dragging = useSharedValue(false);
+  const lastEmitted = useSharedValue(value);
 
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          startRef.current = valueRef.current;
-          haptic.selection();
-        },
-        onPanResponderMove: (_e, g) => {
-          const delta = (-g.dy / usable) * 24;
-          const v = clamp(Math.round(startRef.current + delta), -12, 12);
-          if (v !== valueRef.current) onChange(v);
-        },
-      }),
-    [usable, onChange],
-  );
+  useEffect(() => {
+    if (!dragging.value) live.value = withSpring(value, { damping: 20, stiffness: 240 });
+  }, [value, live, dragging]);
 
-  const pct = (value + 12) / 24;
-  const topOffset = (1 - pct) * usable;
+  const emit = (v: number) => {
+    onChange(v);
+    haptic.selection();
+  };
+
+  const pan = Gesture.Pan()
+    .activeOffsetY([-2, 2])
+    .failOffsetX([-30, 30])
+    .shouldCancelWhenOutside(false)
+    .onBegin(() => {
+      dragging.value = true;
+      start.value = live.value;
+    })
+    .onUpdate((e) => {
+      const v = Math.max(-12, Math.min(12, start.value + (-e.translationY / usable) * 24));
+      live.value = v;
+      const stepped = Math.round(v * 2) / 2; // 0.5 dB steps
+      if (stepped !== lastEmitted.value) {
+        lastEmitted.value = stepped;
+        runOnJS(emit)(stepped);
+      }
+    })
+    .onFinalize(() => {
+      dragging.value = false;
+      const stepped = Math.round(live.value * 2) / 2;
+      live.value = withSpring(stepped, { damping: 20, stiffness: 240 });
+      if (stepped !== lastEmitted.value) {
+        lastEmitted.value = stepped;
+        runOnJS(onChange)(stepped);
+      }
+    });
+
+  const tap = Gesture.Tap().onEnd((e) => {
+    const pct = 1 - Math.max(0, Math.min(1, (e.y - THUMB / 2) / usable));
+    const v = Math.round((pct * 24 - 12) * 2) / 2;
+    live.value = withSpring(v, { damping: 20, stiffness: 240 });
+    lastEmitted.value = v;
+    runOnJS(emit)(v);
+  });
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    top: (1 - (live.value + 12) / 24) * usable,
+    transform: [{ scale: withSpring(dragging.value ? 1.25 : 1, { damping: 16, stiffness: 300 }) }],
+  }));
+  const fillStyle = useAnimatedStyle(() => ({
+    height: ((live.value + 12) / 24) * usable + THUMB / 2,
+  }));
 
   return (
-    <View style={faderStyles.box} {...responder.panHandlers}>
-      <View style={[faderStyles.track, { backgroundColor: track }]} />
-      <View
-        style={[
-          faderStyles.fill,
-          { backgroundColor: fill, height: pct * usable + THUMB / 2 },
-        ]}
-      />
-      <View style={[faderStyles.thumb, { top: topOffset, borderColor: fill, backgroundColor: thumb }]} />
-    </View>
+    <GestureDetector gesture={Gesture.Exclusive(pan, tap)}>
+      <View style={faderStyles.box} collapsable={false}>
+        <View style={[faderStyles.track, { backgroundColor: track }]} />
+        <Animated.View style={[faderStyles.fill, { backgroundColor: fill }, fillStyle]} />
+        <Animated.View style={[faderStyles.thumb, { borderColor: fill, backgroundColor: thumb }, thumbStyle]} />
+      </View>
+    </GestureDetector>
   );
 }
 

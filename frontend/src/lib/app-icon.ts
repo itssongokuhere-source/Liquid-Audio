@@ -28,6 +28,6 @@ export const supportsAlternateIcons = !!mod?.supportsAlternateIcons;
 
 export async function applyAppIcon(key: string): Promise<boolean> {
   if (!mod?.supportsAlternateIcons) return false;
-  await mod.setAlternateAppIcon(key === DEFAULT_ICON ? null : key);
+  await mod.setAlternateAppIcon(key === DEFAULT_ICON ? null : key.charAt(0).toUpperCase() + key.slice(1));
   return true;
 }

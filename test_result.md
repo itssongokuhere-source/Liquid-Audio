@@ -152,3 +152,61 @@ frontend:
 agent_communication:
   - agent: "main"
     message: "No auth. ADMIN_PIN=2468. Web preview cannot play audio (expected). Alternate app icons + APK install are native-only (expected toast on web). Delete any test releases you publish (db.app_releases) at the end so users don't see a fake update."
+
+## Iteration 6 — Search suggestions, Jam (listen together), Apple-style lyrics, perf (main agent)
+backend:
+  - task: "GET /api/search/suggest?q= (autocomplete: suggestions[] + entities[] song/artist/album)"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+  - task: "GET /api/lyrics — multi-query LRCLIB synced search (Hinglish), source field, JioSaavn plain fallback"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+  - task: "Jam: POST /api/jam, GET /api/jam/{code}, DELETE /api/jam/{code}?device_id, GET /api/jam/time, WS /api/jam/ws/{code}?device_id&name (hello/pong/state/members/control/add_track/ended)"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+frontend:
+  - task: "Search: YouTube-Music style suggestions while typing (text rows w/ highlight + fill arrow, entity rows), recent searches (persisted, remove/clear), trending chips, submit → results"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(tabs)/search.tsx"
+    needs_retesting: true
+  - task: "Jam screen (/jam) — start (code + QR + share), join by code/link, deep link /jam?code=, members list, guest controls; player Jam pill (testID player-jam); guests' player controls route to host"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/jam.tsx, /app/frontend/src/components/jam-context.tsx"
+    needs_retesting: true
+  - task: "Lyrics: auto-timed plain lyrics (pill testID lyrics-approx), animated active line + word glow"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/lyrics.tsx"
+    needs_retesting: true
+  - task: "Perf: useAudioProgress split (position ticks no longer re-render whole app), query defaults staleTime"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+agent_communication:
+  - agent: "main"
+    message: "Lock-screen/system media controls (setActiveForLockScreen) are native-only; skip on web. For Jam sync use two browser contexts: host starts, guest joins with code; verify members list updates on both and guest sees host's track title. Audio itself won't play on web."
+
+## Iteration 7 — Artist attribution, professional search results, 3-tab queue, lyrics gap dots (main agent)
+backend:
+  - task: "normalize_song: singer-first artist ordering + artists[] (id,name,role); GET /api/search?q= structured (top artist, artistSongs, deduped songs, remix/lofi variants hidden unless asked)"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+frontend:
+  - task: "Search results: Top result artist card (testID top-result-<id>), 'Top songs · X', 'More songs'; ⋯ sheet lists 'View <artist>' rows (action-view-artist, action-view-artist-<id>); player artist tap opens chooser when multiple credited"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+  - task: "Queue screen tabs (queue-tabs): queue-tab-upnext / queue-tab-lyrics / queue-tab-related; Up next only shows queue; Related shows autoplay card + 'Related to “<song>”' list seeded from CURRENT song (stable); playSuggestion inserts after current"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+  - task: "LyricsView shared component (lyrics-view testID) with GapDots for intro/instrumental gaps (lyrics-gap-active when active)"
+    implemented: true
+    working: "NA"
+    needs_retesting: true

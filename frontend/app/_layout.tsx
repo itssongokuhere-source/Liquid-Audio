@@ -12,6 +12,7 @@ import { AdaptiveTheme } from "@/src/components/adaptive-theme";
 import { AudioProvider } from "@/src/components/audio-context";
 import { DownloadsProvider } from "@/src/components/downloads-context";
 import { ErrorBoundary } from "@/src/components/error-boundary";
+import { JamProvider } from "@/src/components/jam-context";
 import { FONTS } from "@/src/components/text";
 import { ToastProvider, useToast } from "@/src/components/toast";
 import { TrackActionsProvider } from "@/src/components/track-actions";
@@ -50,6 +51,7 @@ function ThemedStack() {
           options={{ presentation: "modal", animation: "slide_from_bottom" }}
         />
         <Stack.Screen name="settings" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="jam" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
       </Stack>
     </>
   );
@@ -90,9 +92,11 @@ export default function RootLayout() {
                     <DownloadsProvider>
                       <AudioProvider>
                         <AdaptiveTheme />
-                        <TrackActionsProvider>
-                          <ThemedStack />
-                        </TrackActionsProvider>
+                        <JamProvider>
+                          <TrackActionsProvider>
+                            <ThemedStack />
+                          </TrackActionsProvider>
+                        </JamProvider>
                       </AudioProvider>
                     </DownloadsProvider>
                   </UpdatesWithToast>

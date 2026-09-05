@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/text";
 
-import { useAudio } from "@/src/components/audio-context";
+import { useAudio, useAudioProgress } from "@/src/components/audio-context";
 import { Glass } from "@/src/components/glass";
 import { Icon } from "@/src/components/icon";
 import { MINI_PLAYER_HEIGHT } from "@/src/lib/layout";
@@ -13,7 +13,8 @@ export function MiniPlayer({ bottomOffset }: { bottomOffset: number }) {
   const styles = useStyles();
   const { colors } = useTheme();
   const router = useRouter();
-  const { current, isPlaying, toggle, next, position, duration } = useAudio();
+  const { current, isPlaying, toggle, next } = useAudio();
+  const { position, duration } = useAudioProgress();
 
   if (!current) return null;
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;

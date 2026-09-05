@@ -91,19 +91,53 @@ def _img(url: Optional[str]) -> Optional[str]:
 def normalize_song(s: dict) -> Dict[str, Any]:
     mi = s.get("more_info") or {}
     amap = mi.get("artistMap") or {}
-    artists = amap.get("primary_artists") or amap.get("artists") or []
-    if artists:
-        artist = ", ".join(_clean(a.get("name")) for a in artists[:2])
-        artist_id = str(artists[0].get("id")) if artists[0].get("id") else None
+    primary = amap.get("primary_artists") or []
+    all_artists = amap.get("artists") or []
+    # Singers are what listeners think of as "the artist" — put them first (composers/lyricists after).
+    ordered: List[dict] = []
+    seen_ids = set()
+
+    def push(a: dict, role: str):
+        aid = str(a.get("id") or "")
+        name = _clean(a.get("name"))
+        if not name or aid in seen_ids or name.lower() in {x["name"].lower() for x in ordered}:
+            return
+        seen_ids.add(aid)
+        ordered.append({"id": aid or None, "name": name, "role": role})
+
+    non_singer_names = {_clean(a.get("name")).lower() for a in all_artists
+                        if (a.get("role") or "").lower() in ("music", "lyricist", "starring", "director", "producer")}
+    # Pure singers first (people credited as singer but NOT also composer/lyricist), then the rest.
+    for a in all_artists:
+        if (a.get("role") or "").lower() == "singer" and _clean(a.get("name")).lower() not in non_singer_names:
+            push(a, "singer")
+    for a in all_artists:
+        if (a.get("role") or "").lower() == "singer":
+            push(a, "singer")
+    for a in primary:  # primary artists that are not composers/lyricists are (almost always) the singers
+        if _clean(a.get("name")).lower() not in non_singer_names:
+            push(a, "singer")
+    for a in primary:
+        push(a, "primary")
+    for a in all_artists:
+        if (a.get("role") or "").lower() == "music":
+            push(a, "music")
+    if ordered:
+        artist = ", ".join(x["name"] for x in ordered[:2])
+        artist_id = next((x["id"] for x in ordered if x["id"]), None)
     else:
-        artist = _clean((s.get("subtitle") or "").split(" - ")[0]) or "Unknown Artist"
+        artist = _clean(mi.get("primary_artists") or mi.get("singers")) or \
+            _clean((s.get("subtitle") or "").split(" - ")[-1]) or "Unknown Artist"
         artist_id = None
+        if artist and artist != "Unknown Artist":
+            ordered = [{"id": None, "name": n.strip(), "role": "singer"} for n in artist.split(",")[:3]]
     enc = mi.get("encrypted_media_url")
     return {
         "id": str(s.get("id", "")),
         "title": _clean(s.get("title") or s.get("song")),
         "artist": artist or "Unknown Artist",
         "artistHandle": artist_id,
+        "artists": ordered[:4],
         "artwork": _img(s.get("image")),
         "duration": int(mi.get("duration") or s.get("duration") or 0),
         "genre": s.get("language"),
@@ -162,6 +196,152 @@ async def search(q: str = Query(..., min_length=1),
     items = data.get("results", []) if isinstance(data, dict) else []
     tracks = [normalize_song(s) for s in items if s.get("id")]
     return {"tracks": tracks[:limit]}
+
+
+VARIANT_WORDS = ("slowed", "reverb", "lofi", "lo-fi", "remix", "mashup", "unplugged", "cover",
+                 "instrumental", "karaoke", "8d", "sped up", "reprise", "acoustic", "version", "mix")
+
+
+def _variant_key(title: str) -> str:
+    t = title.lower()
+    t = _re.sub(r"[\(\[].*?[\)\]]", " ", t)          # drop bracketed qualifiers
+    t = _re.sub(r"\s*[-–|].*$", "", t)                # drop " - From X" tails
+    t = _re.sub(r"[^a-z0-9\u0900-\u097f ]+", " ", t)
+    return _re.sub(r"\s+", " ", t).strip()
+
+
+def _is_variant(title: str) -> bool:
+    t = title.lower()
+    return any(w in t for w in VARIANT_WORDS)
+
+
+@api_router.get("/search")
+async def search_structured(q: str = Query(..., min_length=1), limit: int = Query(30, ge=1, le=50)):
+    """Professional search: top result (artist), the artist's real top songs, then deduplicated songs."""
+    q_clean = q.strip()
+    wants_variant = _is_variant(q_clean)
+    ac_task = js_get({"__call": "autocomplete.get", "query": q_clean, "cc": "in", "includeMetaTags": "1"})
+    res_task = js_get({"__call": "search.getResults", "q": q_clean, "n": 40, "p": "1"})
+    ac, res = await _asyncio.gather(ac_task, res_task, return_exceptions=True)
+
+    top: Optional[dict] = None
+    artists: List[dict] = []
+    if isinstance(ac, dict):
+        tq = ((ac.get("topquery") or {}).get("data") or [])
+        arts = ((ac.get("artists") or {}).get("data") or [])
+        for a in (tq + arts):
+            if a.get("type") == "artist" and a.get("id"):
+                ent = {"type": "artist", "id": str(a["id"]), "title": _clean(a.get("title")),
+                       "subtitle": "Artist", "image": _img(a.get("image"))}
+                if not any(x["id"] == ent["id"] for x in artists):
+                    artists.append(ent)
+        if tq and tq[0].get("type") == "artist" and tq[0].get("id"):
+            top = {"type": "artist", "id": str(tq[0]["id"]), "title": _clean(tq[0].get("title")),
+                   "subtitle": "Artist", "image": _img(tq[0].get("image"))}
+
+    raw_songs = res.get("results", []) if isinstance(res, dict) else []
+    songs = [normalize_song(s) for s in raw_songs if s.get("id")]
+
+    # Artist's genuine top songs when the query is that artist
+    artist_songs: List[dict] = []
+    if top and top["title"].lower() in q_clean.lower() or (top and q_clean.lower() in top["title"].lower()):
+        try:
+            data = await js_get({"__call": "artist.getArtistPageDetails", "artistId": top["id"]})
+            ts = data.get("topSongs") if isinstance(data, dict) else None
+            arr = (ts.get("songs") or ts.get("data") or []) if isinstance(ts, dict) else (ts or [])
+            artist_songs = [normalize_song(s) for s in arr if s.get("id")][:15]
+            top["subtitle"] = "Artist" + (f" · {int(data.get('follower_count') or 0):,} followers" if isinstance(data, dict) and data.get("follower_count") else "")
+        except Exception as e:
+            logger.warning("artist top songs failed: %s", e)
+
+    # De-duplicate near-identical titles (keep the most played original; hide remixes unless asked)
+    best: Dict[str, dict] = {}
+    for t in songs:
+        if not wants_variant and _is_variant(t["title"]):
+            continue
+        key = _variant_key(t["title"]) + "|" + str(round((t["duration"] or 0) / 3))
+        cur = best.get(key)
+        if not cur or t["playCount"] > cur["playCount"]:
+            best[key] = t
+    exact = _variant_key(q_clean)
+    ranked = sorted(best.values(), key=lambda t: (_variant_key(t["title"]) != exact, -t["playCount"]))
+    seen_ids = {t["id"] for t in artist_songs}
+    ranked = [t for t in ranked if t["id"] not in seen_ids]
+    return {"query": q_clean, "top": top, "artists": artists[:5], "artistSongs": artist_songs, "songs": ranked[:limit]}
+
+
+@api_router.get("/search/suggest")
+async def search_suggest(q: str = Query(..., min_length=1)):
+    """YouTube-Music style autocomplete: text suggestions + top entities (songs/artists/albums)."""
+    try:
+        data = await js_get({"__call": "autocomplete.get", "query": q, "cc": "in", "includeMetaTags": "1"})
+    except Exception as e:
+        logger.warning("suggest failed: %s", e)
+        return {"suggestions": [], "entities": []}
+    if not isinstance(data, dict):
+        return {"suggestions": [], "entities": []}
+
+    def items(key: str) -> List[dict]:
+        v = data.get(key) or {}
+        arr = v.get("data") if isinstance(v, dict) else v
+        return [x for x in (arr or []) if isinstance(x, dict) and x.get("id")]
+
+    entities: List[dict] = []
+    texts: List[str] = []
+    seen_text = set()
+
+    def add_text(t: Optional[str]):
+        t = _clean(t)
+        key = t.lower()
+        if t and key not in seen_text and key != q.strip().lower():
+            seen_text.add(key)
+            texts.append(t)
+
+    for x in items("topquery"):
+        add_text(x.get("title"))
+    for s in items("songs")[:4]:
+        mi = s.get("more_info") or {}
+        add_text(s.get("title"))
+        entities.append({
+            "type": "song",
+            "id": str(s["id"]),
+            "title": _clean(s.get("title")),
+            "subtitle": _clean(mi.get("primary_artists") or mi.get("singers") or s.get("subtitle")),
+            "image": _img(s.get("image")),
+            "track": normalize_song(s),
+        })
+    for a in items("artists")[:3]:
+        add_text(a.get("title"))
+        entities.append({
+            "type": "artist",
+            "id": str(a["id"]),
+            "title": _clean(a.get("title")),
+            "subtitle": "Artist",
+            "image": _img(a.get("image")),
+        })
+    for al in items("albums")[:3]:
+        add_text(al.get("title"))
+        entities.append({
+            "type": "album",
+            "id": str(al["id"]),
+            "title": _clean(al.get("title")),
+            "subtitle": "Album · " + _clean((al.get("more_info") or {}).get("music") or al.get("subtitle") or ""),
+            "image": _img(al.get("image")),
+        })
+    for x in items("topquery"):
+        t = x.get("type")
+        if t in ("artist", "song", "album") and not any(e["id"] == str(x["id"]) for e in entities):
+            ent = {
+                "type": t,
+                "id": str(x["id"]),
+                "title": _clean(x.get("title")),
+                "subtitle": _clean(x.get("subtitle")) or t.capitalize(),
+                "image": _img(x.get("image")),
+            }
+            if t == "song":
+                ent["track"] = normalize_song(x)
+            entities.insert(0, ent)
+    return {"suggestions": [{"text": t} for t in texts[:8]], "entities": entities[:8]}
 
 
 @api_router.get("/artists/{artist_id}")
@@ -339,55 +519,110 @@ async def stream_proxy(track_id: str, request: Request, q: str = "320"):
     )
 
 
+import re as _re
+
+
+def _simplify_title(t: str) -> str:
+    t = _re.sub(r"\((from|feat\.?|ft\.?|with)[^)]*\)", "", t, flags=_re.I)
+    t = _re.sub(r"\[[^\]]*\]", "", t)
+    t = _re.sub(r"\s*-\s*(from|feat|ft)\b.*$", "", t, flags=_re.I)
+    return _re.sub(r"\s+", " ", t).strip()
+
+
+def _pick_lrc(candidates: List[dict], duration: float, want_synced: bool) -> Optional[dict]:
+    best, best_score = None, -1e9
+    for c in candidates:
+        if want_synced and not c.get("syncedLyrics"):
+            continue
+        if not (c.get("syncedLyrics") or c.get("plainLyrics")):
+            continue
+        d = float(c.get("duration") or 0)
+        diff = abs(d - duration) if duration and d else 6
+        if duration and d and diff > 12:
+            continue
+        score = -diff + (5 if c.get("syncedLyrics") else 0)
+        if score > best_score:
+            best, best_score = c, score
+    return best
+
+
 @api_router.get("/lyrics")
 async def lyrics(title: str, artist: str,
                  album: str = "", duration: float = 0,
                  track_id: Optional[str] = None):
     http = await get_http()
     headers = {"User-Agent": f"{APP_NAME}/1.0 (https://liquidaudio.app)"}
-    params = {
-        "track_name": title,
-        "artist_name": artist,
-        "album_name": album or title,
-        "duration": round(duration),
-    }
-    try:
-        r = await http.get(f"{LRCLIB_BASE}/api/get", params=params, headers=headers)
-        if r.status_code == 200:
-            j = r.json()
-            if j.get("syncedLyrics") or j.get("plainLyrics"):
-                return {
-                    "synced": j.get("syncedLyrics"),
-                    "plain": j.get("plainLyrics"),
-                    "instrumental": bool(j.get("instrumental")),
-                }
-        r2 = await http.get(f"{LRCLIB_BASE}/api/search",
-                            params={"track_name": title, "artist_name": artist},
-                            headers=headers)
-        if r2.status_code == 200:
-            arr = r2.json()
-            if arr and (arr[0].get("syncedLyrics") or arr[0].get("plainLyrics")):
-                best = arr[0]
-                return {
-                    "synced": best.get("syncedLyrics"),
-                    "plain": best.get("plainLyrics"),
-                    "instrumental": bool(best.get("instrumental")),
-                }
-    except Exception as e:
-        logger.warning("lyrics error: %s", e)
+    simple = _simplify_title(title)
+    first_artist = (artist or "").split(",")[0].strip()
+    plain_fallback: Optional[dict] = None
 
-    # JioSaavn plain-lyrics fallback (great for Hindi / Bollywood)
+    async def lrc_get(params: dict) -> Optional[dict]:
+        try:
+            r = await http.get(f"{LRCLIB_BASE}/api/get", params=params, headers=headers)
+            if r.status_code == 200:
+                j = r.json()
+                if j.get("syncedLyrics") or j.get("plainLyrics"):
+                    return j
+        except Exception as e:
+            logger.warning("lrclib get error: %s", e)
+        return None
+
+    async def lrc_search(params: dict) -> List[dict]:
+        try:
+            r = await http.get(f"{LRCLIB_BASE}/api/search", params=params, headers=headers)
+            if r.status_code == 200:
+                arr = r.json()
+                return arr if isinstance(arr, list) else []
+        except Exception as e:
+            logger.warning("lrclib search error: %s", e)
+        return []
+
+    # 1) exact match
+    exact = await lrc_get({"track_name": title, "artist_name": artist,
+                           "album_name": album or title, "duration": round(duration)})
+    if exact and exact.get("syncedLyrics"):
+        return {"synced": exact["syncedLyrics"], "plain": exact.get("plainLyrics"),
+                "instrumental": bool(exact.get("instrumental")), "source": "lrclib"}
+    if exact:
+        plain_fallback = exact
+
+    # 2) progressively looser searches, prefer synced + closest duration (Hinglish tracks are
+    #    often filed under slightly different titles / single artist names)
+    queries = [
+        {"track_name": simple, "artist_name": first_artist},
+        {"q": f"{simple} {first_artist}".strip()},
+        {"track_name": simple},
+        {"q": simple},
+    ]
+    seen = set()
+    for qp in queries:
+        key = tuple(sorted(qp.items()))
+        if key in seen or not any(qp.values()):
+            continue
+        seen.add(key)
+        arr = await lrc_search(qp)
+        best = _pick_lrc(arr, duration, want_synced=True)
+        if best:
+            return {"synced": best["syncedLyrics"], "plain": best.get("plainLyrics"),
+                    "instrumental": bool(best.get("instrumental")), "source": "lrclib"}
+        if not plain_fallback:
+            plain_fallback = _pick_lrc(arr, duration, want_synced=False)
+
+    # 3) JioSaavn plain lyrics (romanised Hinglish for Bollywood) — frontend auto-times them
     if track_id:
         try:
             data = await js_get({"__call": "lyrics.getLyrics", "lyrics_id": track_id})
             raw = (data or {}).get("lyrics")
             if raw:
                 plain = html_lib.unescape(raw.replace("<br>", "\n").replace("<br/>", "\n"))
-                return {"synced": None, "plain": plain, "instrumental": False}
+                return {"synced": None, "plain": plain, "instrumental": False, "source": "jiosaavn"}
         except Exception as e:
             logger.warning("saavn lyrics error: %s", e)
 
-    return {"synced": None, "plain": None, "instrumental": False}
+    if plain_fallback:
+        return {"synced": None, "plain": plain_fallback.get("plainLyrics"),
+                "instrumental": bool(plain_fallback.get("instrumental")), "source": "lrclib"}
+    return {"synced": None, "plain": None, "instrumental": False, "source": None}
 
 
 # ---------------------------------------------------------------------------
@@ -648,6 +883,149 @@ async def artwork_palette(url: str):
         _palette_cache.clear()
     _palette_cache[url] = pal
     return pal
+
+
+# ---------------------------------------------------------------------------
+# Jam — listen together (host broadcasts playback state, guests follow)
+# ---------------------------------------------------------------------------
+import asyncio as _asyncio
+import random as _random
+import time as _time
+from fastapi import WebSocket, WebSocketDisconnect
+
+JAM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+class JamRoom:
+    def __init__(self, code: str, host_device: str, host_name: str):
+        self.code = code
+        self.host_device = host_device
+        self.host_name = host_name
+        self.created_at = _time.time()
+        self.state: Dict[str, Any] = {}
+        self.members: Dict[str, dict] = {}  # device -> {name, ws}
+
+    def member_list(self) -> List[dict]:
+        return [{"device": d, "name": m["name"], "host": d == self.host_device}
+                for d, m in self.members.items()]
+
+    async def broadcast(self, msg: dict, exclude: Optional[str] = None):
+        dead = []
+        for d, m in list(self.members.items()):
+            if d == exclude:
+                continue
+            try:
+                await m["ws"].send_json(msg)
+            except Exception:
+                dead.append(d)
+        for d in dead:
+            self.members.pop(d, None)
+
+
+jam_rooms: Dict[str, JamRoom] = {}
+
+
+def _new_jam_code() -> str:
+    while True:
+        code = "".join(_random.choice(JAM_CODE_ALPHABET) for _ in range(6))
+        if code not in jam_rooms:
+            return code
+
+
+class JamCreateBody(BaseModel):
+    device_id: str
+    name: str = "Host"
+
+
+def _jam_public(room: JamRoom) -> dict:
+    return {
+        "code": room.code,
+        "host_device": room.host_device,
+        "host_name": room.host_name,
+        "members": room.member_list(),
+        "state": room.state,
+        "server_time": _time.time(),
+    }
+
+
+@api_router.post("/jam")
+async def jam_create(body: JamCreateBody):
+    # one live room per host device
+    for r in list(jam_rooms.values()):
+        if r.host_device == body.device_id:
+            jam_rooms.pop(r.code, None)
+    room = JamRoom(_new_jam_code(), body.device_id, body.name.strip() or "Host")
+    jam_rooms[room.code] = room
+    return _jam_public(room)
+
+
+@api_router.get("/jam/time")
+async def jam_time():
+    return {"server_time": _time.time()}
+
+
+@api_router.get("/jam/{code}")
+async def jam_get(code: str):
+    room = jam_rooms.get(code.upper())
+    if not room:
+        raise HTTPException(status_code=404, detail="Jam not found or ended")
+    return _jam_public(room)
+
+
+@api_router.delete("/jam/{code}")
+async def jam_end(code: str, device_id: str):
+    room = jam_rooms.get(code.upper())
+    if not room:
+        return {"ended": True}
+    if room.host_device != device_id:
+        raise HTTPException(status_code=403, detail="Only the host can end the jam")
+    await room.broadcast({"type": "ended"})
+    jam_rooms.pop(room.code, None)
+    return {"ended": True}
+
+
+@api_router.websocket("/jam/ws/{code}")
+async def jam_ws(ws: WebSocket, code: str, device_id: str, name: str = "Guest"):
+    room = jam_rooms.get(code.upper())
+    if not room:
+        await ws.close(code=4404)
+        return
+    await ws.accept()
+    room.members[device_id] = {"name": name[:32] or "Guest", "ws": ws}
+    await ws.send_json({"type": "hello", "server_time": _time.time(), "room": _jam_public(room)})
+    await room.broadcast({"type": "members", "members": room.member_list()}, exclude=device_id)
+    try:
+        while True:
+            msg = await ws.receive_json()
+            t = msg.get("type")
+            now = _time.time()
+            if t == "ping":
+                await ws.send_json({"type": "pong", "client_time": msg.get("client_time"), "server_time": now})
+            elif t == "state" and device_id == room.host_device:
+                state = dict(msg.get("state") or {})
+                state["at"] = now
+                room.state = state
+                await room.broadcast({"type": "state", "state": state, "server_time": now}, exclude=device_id)
+            elif t in ("control", "add_track", "chat"):
+                # guests → host (control/add) or everyone (chat)
+                payload = {**msg, "from": device_id, "from_name": room.members.get(device_id, {}).get("name", "Guest"), "server_time": now}
+                if t == "chat":
+                    await room.broadcast(payload)
+                else:
+                    host = room.members.get(room.host_device)
+                    if host:
+                        await host["ws"].send_json(payload)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.warning("jam ws error: %s", e)
+    finally:
+        room.members.pop(device_id, None)
+        if device_id == room.host_device:
+            await room.broadcast({"type": "ended"})
+            jam_rooms.pop(room.code, None)
+        else:
+            await room.broadcast({"type": "members", "members": room.member_list()})
 
 
 app.include_router(api_router)

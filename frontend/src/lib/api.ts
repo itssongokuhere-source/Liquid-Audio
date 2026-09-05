@@ -8,6 +8,7 @@ export type Track = {
   title: string;
   artist: string;
   artistHandle?: string | null;
+  artists?: { id: string | null; name: string; role: string }[];
   artwork?: string | null;
   duration: number;
   genre?: string | null;
@@ -19,7 +20,48 @@ export type Track = {
 
 export type Playlist = { id: string; name: string; tracks: Track[] };
 export type Library = { favorites: Track[]; recent: Track[]; playlists: Playlist[] };
-export type Lyrics = { synced: string | null; plain: string | null; instrumental: boolean };
+export type Lyrics = { synced: string | null; plain: string | null; instrumental: boolean; source?: string | null };
+
+export type JamMember = { device: string; name: string; host: boolean };
+export type JamState = {
+  track?: Track | null;
+  position?: number;
+  playing?: boolean;
+  at?: number;
+  upcoming?: Track[];
+};
+export type JamRoom = {
+  code: string;
+  host_device: string;
+  host_name: string;
+  members: JamMember[];
+  state: JamState;
+  server_time: number;
+};
+
+export async function createJam(deviceId: string, name: string) {
+  return postJSON<JamRoom>(`/jam`, { device_id: deviceId, name });
+}
+
+export async function fetchJam(code: string) {
+  return getJSON<JamRoom>(`/jam/${encodeURIComponent(code.toUpperCase())}`);
+}
+
+export async function endJam(code: string, deviceId: string) {
+  const res = await fetch(`${API}/jam/${encodeURIComponent(code)}?device_id=${encodeURIComponent(deviceId)}`, {
+    method: "DELETE",
+  });
+  return res.ok;
+}
+
+export function jamSocketUrl(code: string, deviceId: string, name: string) {
+  const ws = API.replace(/^http/, "ws");
+  return `${ws}/jam/ws/${encodeURIComponent(code.toUpperCase())}?device_id=${encodeURIComponent(deviceId)}&name=${encodeURIComponent(name)}`;
+}
+
+export function jamShareUrl(code: string) {
+  return `${BACKEND}/jam?code=${code}`;
+}
 
 export type Artist = {
   id: string;
@@ -120,6 +162,34 @@ export async function fetchRadio(trackId: string): Promise<Track[]> {
   return data.tracks;
 }
 
+export type SearchResults = {
+  query: string;
+  top: SearchEntity | null;
+  artists: SearchEntity[];
+  artistSongs: Track[];
+  songs: Track[];
+};
+
+export async function searchAll(q: string) {
+  return getJSON<SearchResults>(`/search?q=${encodeURIComponent(q)}`);
+}
+
+export type SearchSuggestion = { text: string };
+export type SearchEntity = {
+  type: "song" | "artist" | "album";
+  id: string;
+  title: string;
+  subtitle: string;
+  image?: string | null;
+  track?: Track;
+};
+
+export async function fetchSuggestions(q: string) {
+  return getJSON<{ suggestions: SearchSuggestion[]; entities: SearchEntity[] }>(
+    `/search/suggest?q=${encodeURIComponent(q)}`,
+  );
+}
+
 export async function fetchLyrics(t: Track): Promise<Lyrics> {
   const params = new URLSearchParams({
     title: t.title,
@@ -137,6 +207,7 @@ function slim(t: Track) {
     title: t.title,
     artist: t.artist,
     artistHandle: t.artistHandle ?? null,
+    artists: t.artists ?? [],
     artwork: t.artwork ?? null,
     duration: t.duration ?? 0,
     genre: t.genre ?? null,

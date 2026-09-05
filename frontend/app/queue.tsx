@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/text";
 import Animated, { FadeIn, FadeInUp, LinearTransition } from "react-native-reanimated";
@@ -11,6 +11,7 @@ import { useAudio } from "@/src/components/audio-context";
 import { ArtworkBackdrop } from "@/src/components/artwork-backdrop";
 import { GlassSwitch } from "@/src/components/glass-switch";
 import { Icon } from "@/src/components/icon";
+import { LyricsView } from "@/src/components/lyrics-view";
 import { PlayingBars } from "@/src/components/playing-bars";
 import { QueueList } from "@/src/components/queue-list";
 import { useToast } from "@/src/components/toast";
@@ -44,6 +45,8 @@ export default function QueueScreen() {
     playSuggestion,
     addToQueue,
   } = useAudio();
+
+  const [tab, setTab] = useState<"upnext" | "lyrics" | "related">("upnext");
 
   const upcoming = useMemo(() => {
     const seen = new Set<string>();
@@ -87,6 +90,33 @@ export default function QueueScreen() {
         </AnimatedPressable>
       </View>
 
+      <View style={styles.tabs} testID="queue-tabs">
+        {(
+          [
+            { key: "upnext", label: "Up next" },
+            { key: "lyrics", label: "Lyrics" },
+            { key: "related", label: "Related" },
+          ] as const
+        ).map((t) => {
+          const active = tab === t.key;
+          return (
+            <AnimatedPressable
+              key={t.key}
+              testID={`queue-tab-${t.key}`}
+              onPress={() => setTab(t.key)}
+              scaleTo={0.95}
+              hitSlop={0}
+              style={[styles.tab, active && { backgroundColor: colors.brandPrimary }]}
+            >
+              <Text style={[styles.tabText, active && { color: colors.onBrandPrimary }]}>{t.label}</Text>
+            </AnimatedPressable>
+          );
+        })}
+      </View>
+
+      {tab === "lyrics" ? (
+        <LyricsView embedded />
+      ) : (
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 40 }}
         showsVerticalScrollIndicator={false}
@@ -107,7 +137,7 @@ export default function QueueScreen() {
           <Text style={styles.empty}>Nothing playing</Text>
         )}
 
-        {current ? (
+        {current && tab === "upnext" ? (
           <View style={styles.sectionHead}>
             <Text style={styles.sectionLabel}>
               Next in queue{upcoming.length ? ` · ${upcoming.length}` : ""}
@@ -116,7 +146,7 @@ export default function QueueScreen() {
           </View>
         ) : null}
 
-        {current && upcoming.length === 0 ? (
+        {current && tab === "upnext" && upcoming.length === 0 ? (
           <Animated.View entering={FadeIn} style={styles.emptyCard}>
             <Icon name="albums-outline" size={22} color={DIM} />
             <Text style={styles.emptyCardText}>
@@ -125,6 +155,7 @@ export default function QueueScreen() {
           </Animated.View>
         ) : null}
 
+        {tab === "upnext" ? (
         <Animated.View layout={LinearTransition.springify().damping(20)}>
           <QueueList
             items={upcoming}
@@ -135,8 +166,9 @@ export default function QueueScreen() {
             colors={listColors}
           />
         </Animated.View>
+        ) : null}
 
-        {current ? (
+        {current && tab === "related" ? (
           <Animated.View entering={FadeInUp.delay(120).springify().damping(18)} style={styles.autoplayCard}>
             <View style={styles.autoplayIcon}>
               <Icon name="infinite" size={22} color={autoplay ? colors.brandPrimary : DIM} />
@@ -155,9 +187,9 @@ export default function QueueScreen() {
           </Animated.View>
         ) : null}
 
-        {current && autoplay ? (
+        {current && tab === "related" ? (
           <View>
-            <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Similar songs</Text>
+            <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Related to “{current.title}”</Text>
             {suggestionsLoading ? (
               <View style={styles.loading}>
                 <ActivityIndicator color={colors.brandPrimary} />
@@ -209,6 +241,7 @@ export default function QueueScreen() {
           </View>
         ) : null}
       </ScrollView>
+      )}
     </View>
   );
 }
@@ -220,6 +253,17 @@ const styles = StyleSheet.create({
   title: { color: WHITE, fontSize: 16, fontWeight: "700" },
   sectionLabel: { color: DIM, fontSize: 12, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 },
   sectionHead: { marginTop: 24 },
+  tabs: {
+    flexDirection: "row",
+    gap: 6,
+    marginHorizontal: 20,
+    marginBottom: 14,
+    padding: 4,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  tab: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 9, borderRadius: 11 },
+  tabText: { color: DIM, fontSize: 13, fontWeight: "700" },
   hint: { color: DIM, fontSize: 12, marginTop: -4, marginBottom: 10 },
   nowRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   art: { width: 56, height: 56, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.1)" },

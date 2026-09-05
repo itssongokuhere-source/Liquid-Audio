@@ -63,7 +63,7 @@
         "expo-alternate-app-icons",
         [
           {
-            "name": "ocean",
+            "name": "Ocean",
             "ios": "./assets/icons/ocean-square.png",
             "android": {
               "foregroundImage": "./assets/icons/ocean-foreground.png",
@@ -72,7 +72,7 @@
             }
           },
           {
-            "name": "aurora",
+            "name": "Aurora",
             "ios": "./assets/icons/aurora-square.png",
             "android": {
               "foregroundImage": "./assets/icons/aurora-foreground.png",
@@ -81,7 +81,7 @@
             }
           },
           {
-            "name": "midnight",
+            "name": "Midnight",
             "ios": "./assets/icons/midnight-square.png",
             "android": {
               "foregroundImage": "./assets/icons/midnight-foreground.png",
@@ -90,7 +90,7 @@
             }
           },
           {
-            "name": "gold",
+            "name": "Gold",
             "ios": "./assets/icons/gold-square.png",
             "android": {
               "foregroundImage": "./assets/icons/gold-foreground.png",
@@ -99,7 +99,7 @@
             }
           },
           {
-            "name": "violet",
+            "name": "Violet",
             "ios": "./assets/icons/violet-square.png",
             "android": {
               "foregroundImage": "./assets/icons/violet-foreground.png",

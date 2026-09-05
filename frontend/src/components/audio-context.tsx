@@ -45,8 +45,6 @@ type AudioContextValue = {
   hasTrack: boolean;
   isPlaying: boolean;
   isBuffering: boolean;
-  position: number;
-  duration: number;
   repeat: RepeatMode;
   shuffle: boolean;
   autoplay: boolean;
@@ -72,6 +70,14 @@ type AudioContextValue = {
 };
 
 const AudioContext = createContext<AudioContextValue | null>(null);
+
+type AudioProgress = { position: number; duration: number };
+const AudioProgressContext = createContext<AudioProgress>({ position: 0, duration: 0 });
+
+/** High-frequency playback progress — only subscribe where a seek bar / lyrics need it. */
+export function useAudioProgress(): AudioProgress {
+  return useContext(AudioProgressContext);
+}
 
 export function useAudio(): AudioContextValue {
   const ctx = useContext(AudioContext);
@@ -112,14 +118,16 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     storage.getItem<boolean>(AUTOPLAY_KEY, true).then((v) => setAutoplay(v !== false));
   }, []);
 
-  // Autoplay suggestions are seeded from the tail of the queue (like YouTube Music).
-  const tail = queue[queue.length - 1] ?? null;
+  // "Related" / autoplay suggestions are seeded from the song that is playing and stay stable
+  // until the song changes (no reshuffling while you browse the queue).
   const queueIds = useMemo(() => queue.map((t) => t.id), [queue]);
+  const seedId = current?.id ?? null;
   const recQuery = useQuery({
-    queryKey: ["recommendations", tail?.id],
-    queryFn: () => fetchRecommendations(tail!.id, queueIds),
-    enabled: !!tail && autoplay,
-    staleTime: 10 * 60 * 1000,
+    queryKey: ["recommendations", seedId],
+    queryFn: () => fetchRecommendations(seedId as string, queueIds),
+    enabled: !!seedId,
+    staleTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
   const suggestions = useMemo(() => {
     const ids = new Set(queueIds);
@@ -132,6 +140,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     setAudioModeAsync({
       playsInSilentMode: true,
       shouldPlayInBackground: true,
+      interruptionMode: "doNotMix",
     }).catch(() => {});
   }, []);
 
@@ -160,6 +169,23 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         player.volume = crossfade > 0 ? 0 : 1;
         player.replace({ uri: local || playbackUrl(current, quality) });
         player.play();
+        // System "Now Playing" (lock screen, notification, Dynamic Island / media islands)
+        if (Platform.OS !== "web") {
+          try {
+            player.setActiveForLockScreen(
+              true,
+              {
+                title: current.title,
+                artist: current.artist,
+                albumTitle: current.album ?? undefined,
+                artworkUrl: current.artwork ?? undefined,
+              },
+              { showSeekForward: false, showSeekBackward: false },
+            );
+          } catch {
+            // older runtimes without lock-screen support
+          }
+        }
         if (crossfade > 0) {
           // Fade-in over ~700ms
           const steps = 14;
@@ -316,9 +342,12 @@ export function AudioProvider({ children }: { children: ReactNode }) {
 
   const playSuggestion = useCallback((track: Track) => {
     const q = queueRef.current;
+    const i = indexRef.current;
     haptic.medium();
-    setQueue([...q, track]);
-    setIndex(q.length);
+    const rest = q.filter((t, k) => k <= i || t.id !== track.id);
+    rest.splice(i + 1, 0, track);
+    setQueue(rest);
+    setIndex(i + 1);
   }, []);
 
   const startRadio = useCallback(
@@ -359,12 +388,12 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const prev = useCallback(() => {
-    if ((status.currentTime ?? 0) > 3) {
+    if ((player.currentTime ?? 0) > 3) {
       player.seekTo(0);
       return;
     }
     advance(-1);
-  }, [advance, status.currentTime, player]);
+  }, [advance, player]);
 
   const seek = useCallback(
     (seconds: number) => {
@@ -391,8 +420,6 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       hasTrack: !!current,
       isPlaying: !!status.playing,
       isBuffering: !!status.isBuffering,
-      position: status.currentTime ?? 0,
-      duration: status.duration || current?.duration || 0,
       repeat,
       shuffle,
       autoplay,
@@ -422,8 +449,6 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       index,
       status.playing,
       status.isBuffering,
-      status.currentTime,
-      status.duration,
       repeat,
       shuffle,
       autoplay,
@@ -449,5 +474,17 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <AudioContext.Provider value={value}>{children}</AudioContext.Provider>;
+  const progress = useMemo<AudioProgress>(
+    () => ({
+      position: status.currentTime ?? 0,
+      duration: status.duration || current?.duration || 0,
+    }),
+    [status.currentTime, status.duration, current?.duration],
+  );
+
+  return (
+    <AudioContext.Provider value={value}>
+      <AudioProgressContext.Provider value={progress}>{children}</AudioProgressContext.Provider>
+    </AudioContext.Provider>
+  );
 }

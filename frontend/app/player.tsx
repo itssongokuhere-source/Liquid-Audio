@@ -7,10 +7,11 @@ import { Text } from "@/src/components/text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/animated-pressable";
-import { useAudio } from "@/src/components/audio-context";
+import { useAudio, useAudioProgress } from "@/src/components/audio-context";
 import { ArtworkBackdrop } from "@/src/components/artwork-backdrop";
 import { useDownloads } from "@/src/components/downloads-context";
 import { Icon } from "@/src/components/icon";
+import { useJam } from "@/src/components/jam-context";
 import { useToast } from "@/src/components/toast";
 import { useTrackActions } from "@/src/components/track-actions";
 import { toggleFavorite } from "@/src/lib/api";
@@ -35,8 +36,6 @@ export default function PlayerScreen() {
     index,
     isPlaying,
     isBuffering,
-    position,
-    duration,
     toggle,
     next,
     prev,
@@ -47,6 +46,12 @@ export default function PlayerScreen() {
     toggleShuffle,
   } = useAudio();
 
+  const { position, duration } = useAudioProgress();
+  const jam = useJam();
+  const guest = !!jam.room && !jam.isHost;
+  const onToggle = guest ? () => jam.sendControl("toggle") : toggle;
+  const onNext = guest ? () => jam.sendControl("next") : next;
+  const onPrev = guest ? () => jam.sendControl("prev") : prev;
   const { data: library, deviceId } = useLibrary();
   const { isDownloaded, isDownloading, downloadTrack } = useDownloads();
   const isFav = !!(current && library?.favorites?.some((f) => f.id === current.id));
@@ -84,7 +89,10 @@ export default function PlayerScreen() {
           <Pressable testID="player-close" onPress={() => router.back()} hitSlop={12} style={styles.topBtn}>
             <Icon name="chevron-down" size={28} color={WHITE} />
           </Pressable>
-          <Text style={styles.topLabel}>Now Playing</Text>
+          <Pressable testID="player-jam" onPress={() => router.push("/jam")} style={[styles.jamPill, jam.room && { backgroundColor: colors.brandPrimary }]}>
+            <Icon name="people" size={16} color={WHITE} />
+            <Text style={styles.jamPillText}>{jam.room ? `Jam · ${jam.members.length}` : "Jam"}</Text>
+          </Pressable>
           <Pressable testID="player-more" onPress={() => openActions(current)} hitSlop={12} style={styles.topBtn}>
             <Icon name="ellipsis-horizontal" size={24} color={WHITE} />
           </Pressable>
@@ -107,7 +115,11 @@ export default function PlayerScreen() {
             <Pressable
               testID="player-artist-link"
               disabled={!current.artistHandle}
-              onPress={() => current.artistHandle && router.push(`/artist/${current.artistHandle}`)}
+              onPress={() => {
+                const credited = (current.artists ?? []).filter((a) => a.id);
+                if (credited.length > 1) openActions(current);
+                else if (current.artistHandle) router.push(`/artist/${current.artistHandle}`);
+              }}
             >
               <Text style={styles.artist} numberOfLines={1}>
                 {current.artist}
@@ -138,17 +150,17 @@ export default function PlayerScreen() {
           <AnimatedPressable testID="player-shuffle" onPress={toggleShuffle} scaleTo={0.8}>
             <Icon name="shuffle" size={24} color={shuffle ? colors.brandPrimary : WHITE_DIM} />
           </AnimatedPressable>
-          <AnimatedPressable testID="player-prev" onPress={prev} scaleTo={0.8}>
+          <AnimatedPressable testID="player-prev" onPress={onPrev} scaleTo={0.8}>
             <Icon name="play-skip-back" size={34} color={WHITE} />
           </AnimatedPressable>
-          <AnimatedPressable testID="player-play-toggle" onPress={toggle} style={[styles.playBtn, { backgroundColor: colors.brandPrimary, boxShadow: `0 6px 16px ${colors.brandPrimary}80` }]} scaleTo={0.9}>
+          <AnimatedPressable testID="player-play-toggle" onPress={onToggle} style={[styles.playBtn, { backgroundColor: colors.brandPrimary, boxShadow: `0 6px 16px ${colors.brandPrimary}80` }]} scaleTo={0.9}>
             <Icon
               name={isBuffering ? "ellipsis-horizontal" : isPlaying ? "pause" : "play"}
               size={36}
               color={colors.onBrandPrimary}
             />
           </AnimatedPressable>
-          <AnimatedPressable testID="player-next" onPress={next} scaleTo={0.8}>
+          <AnimatedPressable testID="player-next" onPress={onNext} scaleTo={0.8}>
             <Icon name="play-skip-forward" size={34} color={WHITE} />
           </AnimatedPressable>
           <AnimatedPressable testID="player-repeat" onPress={cycleRepeat} scaleTo={0.8}>
@@ -290,6 +302,16 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   topBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   topLabel: { color: WHITE, fontSize: 14, fontWeight: "700", letterSpacing: 0.5 },
+  jamPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  jamPillText: { color: WHITE, fontSize: 13, fontWeight: "700" },
   artWrap: {
     flex: 1,
     maxHeight: 380,

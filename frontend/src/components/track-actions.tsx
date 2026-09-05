@@ -225,20 +225,26 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
                       }}
                     />
 
-                    {track.artistHandle ? (
+                    {(track.artists?.filter((a) => a.id).length
+                      ? track.artists!.filter((a) => a.id).slice(0, 3)
+                      : track.artistHandle
+                        ? [{ id: track.artistHandle, name: track.artist.split(",")[0].trim(), role: "singer" }]
+                        : []
+                    ).map((a, i) => (
                       <ActionRow
-                        testID="action-view-artist"
-                        delay={160}
+                        key={a.id as string}
+                        testID={i === 0 ? "action-view-artist" : `action-view-artist-${a.id}`}
+                        delay={160 + i * 30}
                         icon="person-outline"
                         iconColor={colors.onSurface}
-                        label="View artist"
+                        label={`View ${a.name}`}
+                        trailing={a.role === "music" ? "Composer" : undefined}
                         onPress={() => {
-                          const handle = track.artistHandle;
                           close();
-                          if (handle) router.push(`/artist/${handle}`);
+                          router.push(`/artist/${a.id}`);
                         }}
                       />
-                    ) : null}
+                    ))}
 
                     <ActionRow
                       testID="action-download"
