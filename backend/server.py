@@ -242,9 +242,16 @@ async def search_structured(q: str = Query(..., min_length=1), limit: int = Quer
     raw_songs = res.get("results", []) if isinstance(res, dict) else []
     songs = [normalize_song(s) for s in raw_songs if s.get("id")]
 
-    # Artist's genuine top songs when the query is that artist
+    # Artist's genuine top songs only when the query really *is* that artist (close name match),
+    # never when the query is a song title that merely appears inside an artist's name.
+    import difflib
     artist_songs: List[dict] = []
-    if top and top["title"].lower() in q_clean.lower() or (top and q_clean.lower() in top["title"].lower()):
+    q_key = _variant_key(q_clean)
+    exact_song = any(_variant_key(t["title"]) == q_key for t in songs)
+    close_artist = bool(top) and difflib.SequenceMatcher(None, q_clean.lower(), top["title"].lower()).ratio() >= 0.75
+    if top and not close_artist and exact_song:
+        top = None
+    if top and close_artist:
         try:
             data = await js_get({"__call": "artist.getArtistPageDetails", "artistId": top["id"]})
             ts = data.get("topSongs") if isinstance(data, dict) else None
@@ -297,29 +304,36 @@ async def search_suggest(q: str = Query(..., min_length=1)):
             seen_text.add(key)
             texts.append(t)
 
+    ql = q.strip().lower()
     for x in items("topquery"):
         add_text(x.get("title"))
-    for s in items("songs")[:4]:
-        mi = s.get("more_info") or {}
-        add_text(s.get("title"))
+    # 1) Artists — only when the typed text is actually part of the artist's name (YouTube-Music style)
+    for a in (items("topquery") + items("artists")):
+        if a.get("type") not in (None, "artist") and a.get("type") != "artist":
+            continue
+        name = _clean(a.get("title"))
+        if not name or ql not in name.lower() or any(e["id"] == str(a["id"]) for e in entities):
+            continue
+        add_text(name)
+        entities.append({"type": "artist", "id": str(a["id"]), "title": name, "subtitle": "Artist", "image": _img(a.get("image"))})
+        if len([e for e in entities if e["type"] == "artist"]) >= 2:
+            break
+    # 2) Songs (exact-title matches first)
+    songs_ac = items("songs")
+    songs_ac.sort(key=lambda x: (_variant_key(_clean(x.get("title"))) != _variant_key(q), _is_variant(_clean(x.get("title")))))
+    for sng in songs_ac[:5]:
+        mi = sng.get("more_info") or {}
+        add_text(sng.get("title"))
         entities.append({
             "type": "song",
-            "id": str(s["id"]),
-            "title": _clean(s.get("title")),
-            "subtitle": _clean(mi.get("primary_artists") or mi.get("singers") or s.get("subtitle")),
-            "image": _img(s.get("image")),
-            "track": normalize_song(s),
+            "id": str(sng["id"]),
+            "title": _clean(sng.get("title")),
+            "subtitle": _clean(mi.get("primary_artists") or mi.get("singers") or sng.get("subtitle")),
+            "image": _img(sng.get("image")),
+            "track": normalize_song(sng),
         })
-    for a in items("artists")[:3]:
-        add_text(a.get("title"))
-        entities.append({
-            "type": "artist",
-            "id": str(a["id"]),
-            "title": _clean(a.get("title")),
-            "subtitle": "Artist",
-            "image": _img(a.get("image")),
-        })
-    for al in items("albums")[:3]:
+    # 3) Albums
+    for al in items("albums")[:2]:
         add_text(al.get("title"))
         entities.append({
             "type": "album",
@@ -328,19 +342,6 @@ async def search_suggest(q: str = Query(..., min_length=1)):
             "subtitle": "Album · " + _clean((al.get("more_info") or {}).get("music") or al.get("subtitle") or ""),
             "image": _img(al.get("image")),
         })
-    for x in items("topquery"):
-        t = x.get("type")
-        if t in ("artist", "song", "album") and not any(e["id"] == str(x["id"]) for e in entities):
-            ent = {
-                "type": t,
-                "id": str(x["id"]),
-                "title": _clean(x.get("title")),
-                "subtitle": _clean(x.get("subtitle")) or t.capitalize(),
-                "image": _img(x.get("image")),
-            }
-            if t == "song":
-                ent["track"] = normalize_song(x)
-            entities.insert(0, ent)
     return {"suggestions": [{"text": t} for t in texts[:8]], "entities": entities[:8]}
 
 

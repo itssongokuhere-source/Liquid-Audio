@@ -27,10 +27,12 @@ export function PlayerPanel({
   tab,
   onTabChange,
   onClose,
+  showTabs = false,
 }: {
   tab: PanelTab;
   onTabChange: (t: PanelTab) => void;
   onClose: () => void;
+  showTabs?: boolean;
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -94,6 +96,7 @@ export function PlayerPanel({
         </AnimatedPressable>
       </View>
 
+      {showTabs ? (
       <View style={styles.tabs} testID="queue-tabs">
         {(
           [
@@ -117,6 +120,7 @@ export function PlayerPanel({
           );
         })}
       </View>
+      ) : null}
 
       {tab === "lyrics" ? (
         <LyricsView embedded />

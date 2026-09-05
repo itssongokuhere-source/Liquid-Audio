@@ -136,6 +136,14 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const suggestionsRef = useRef(suggestions);
   suggestionsRef.current = suggestions;
 
+  // YouTube-Music behaviour: when you play a single song with Autoplay on, Up Next is filled
+  // right away with related songs (instead of waiting for the song to end).
+  useEffect(() => {
+    if (!autoplay || !current) return;
+    if (queue.length - index - 1 > 0 || suggestions.length === 0) return;
+    setQueue((q) => (q.length - indexRef.current - 1 > 0 ? q : [...q, ...suggestions.slice(0, 10)]));
+  }, [autoplay, current, queue.length, index, suggestions]);
+
   useEffect(() => {
     setAudioModeAsync({
       playsInSilentMode: true,

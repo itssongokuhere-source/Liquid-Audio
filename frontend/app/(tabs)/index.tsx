@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -24,25 +23,15 @@ import { fetchTrending, type Track } from "@/src/lib/api";
 import { contentBottomPad } from "@/src/lib/layout";
 import { useLibrary, useMixes } from "@/src/lib/hooks";
 import { MixCard } from "@/src/components/mix-card";
-import { LiquidRefresh } from "@/src/components/liquid-refresh";
-import { fetchMixes } from "@/src/lib/api";
+import { LiquidRefresh, PullToRefresh } from "@/src/components/liquid-refresh";
+import { GestureDetector } from "react-native-gesture-handler";
+import { fetchMixes, fetchRecommendations } from "@/src/lib/api";
 import { haptic } from "@/src/lib/haptics";
 import { queryClient } from "@/src/query-client";
 import Animated, { Easing, LinearTransition, useAnimatedStyle, useSharedValue, withRepeat, withTiming, cancelAnimation } from "react-native-reanimated";
 import { makeStyles, useTheme } from "@/src/theme";
 
-const GENRES = [
-  "For You",
-  "Hindi",
-  "English",
-  "Punjabi",
-  "Tamil",
-  "Telugu",
-  "Bhojpuri",
-  "Bengali",
-  "Marathi",
-  "Malayalam",
-];
+const BASE_GENRES = ["For You", "Hindi", "English", "Punjabi"];
 
 function greeting() {
   const h = new Date().getHours();
@@ -67,15 +56,26 @@ export default function HomeScreen() {
   });
   const { data: library, deviceId } = useLibrary();
   const { data: mixes = [] } = useMixes();
-  const recent = library?.recent ?? [];
+  const recent = useMemo(() => library?.recent ?? [], [library?.recent]);
+  // Only languages the listener actually plays are surfaced (plus the core set).
+  const GENRES = useMemo(() => {
+    const extra: string[] = [];
+    for (const t of recent) {
+      const g = t.genre ? t.genre.charAt(0).toUpperCase() + t.genre.slice(1).toLowerCase() : "";
+      if (g && !BASE_GENRES.includes(g) && !extra.includes(g)) extra.push(g);
+    }
+    return [...BASE_GENRES, ...extra.slice(0, 3)];
+  }, [recent]);
 
   // Pull-to-refresh (YouTube-Music style): rebuild mixes, refetch trending and reshuffle the feed.
   const [refreshing, setRefreshing] = useState(false);
   const [feedSeed, setFeedSeed] = useState(0);
+  const [pulled, setPulled] = useState(false);
   const spin = useSharedValue(0);
   const spinStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value}deg` }] }));
-  const onRefresh = useCallback(async () => {
+  const onRefresh = useCallback(async (fromPull = false) => {
     if (refreshing) return;
+    setPulled(fromPull === true);
     haptic.medium();
     setRefreshing(true);
     spin.value = withRepeat(withTiming(360, { duration: 900, easing: Easing.linear }), -1, false);
@@ -108,6 +108,26 @@ export default function HomeScreen() {
     return arr;
   }, [tracks, feedSeed]);
 
+  // "Because you played …" — recommendations seeded by the two most recent distinct songs.
+  const seeds = useMemo(() => {
+    const out: Track[] = [];
+    for (const t of recent) {
+      if (out.length >= 2) break;
+      if (!out.some((x) => x.artist === t.artist)) out.push(t);
+    }
+    return out;
+  }, [recent]);
+  const becauseQueries = useQueries({
+    queries: seeds.map((t) => ({
+      queryKey: ["because", t.id],
+      queryFn: () => fetchRecommendations(t.id),
+      staleTime: 30 * 60 * 1000,
+    })),
+  });
+  const because = seeds
+    .map((seed, i) => ({ seed, tracks: (becauseQueries[i]?.data ?? []).slice(0, 12) }))
+    .filter((b) => b.tracks.length >= 4);
+
   const hero = shuffled[0];
   const trendingRow = shuffled.slice(1, 12);
   const listTracks = shuffled.slice(1);
@@ -127,7 +147,7 @@ export default function HomeScreen() {
           >
             <Icon name="search" size={22} color={colors.onSurface} />
           </Pressable>
-          <Pressable testID="home-refresh" onPress={onRefresh} style={styles.iconBtn}>
+          <Pressable testID="home-refresh" onPress={() => onRefresh(false)} style={styles.iconBtn}>
             <Animated.View style={spinStyle}>
               <Icon name="refresh" size={22} color={refreshing ? colors.brandPrimary : colors.onSurface} />
             </Animated.View>
@@ -192,23 +212,20 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container} testID="home-screen">
-      <ScrollView
+      <PullToRefresh refreshing={refreshing} onRefresh={() => onRefresh(true)} excludeTop={insets.top + 132}>
+        {({ scrollGesture, onScroll }) => (
+      <GestureDetector gesture={scrollGesture}>
+      <Animated.ScrollView
         stickyHeaderIndices={[0]}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode="never"
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={{ paddingBottom: contentBottomPad(hasTrack) }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.brandPrimary}
-            colors={[colors.brandPrimary]}
-            progressBackgroundColor={colors.surfaceSecondary}
-            progressViewOffset={insets.top + 60}
-          />
-        }
       >
         {StickyHeader}
-        <LiquidRefresh visible={refreshing} label="Refreshing your feed…" />
+        <LiquidRefresh visible={refreshing && !pulled} label="Refreshing your feed…" />
         <Animated.View layout={LinearTransition.springify().damping(20)} key={`feed-${feedSeed}`}>
 
         {hero ? (
@@ -271,6 +288,22 @@ export default function HomeScreen() {
           )}
         />
 
+        {because.map((b) => (
+          <View key={b.seed.id} testID={`because-${b.seed.id}`}>
+            <SectionTitle text={`Because you played ${b.seed.title}`} />
+            <FlatList
+              horizontal
+              data={b.tracks}
+              keyExtractor={(t) => t.id}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.hRow}
+              renderItem={({ item }) => (
+                <ArtworkCard track={item} onPress={() => playNow(item, b.tracks)} size={130} />
+              )}
+            />
+          </View>
+        ))}
+
         {recent.length > 0 ? (
           <>
             <SectionTitle text="Recently Played" />
@@ -304,7 +337,10 @@ export default function HomeScreen() {
             />
           ))}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
+      </GestureDetector>
+        )}
+      </PullToRefresh>
     </View>
   );
 }

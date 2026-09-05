@@ -3,7 +3,8 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Text } from "@/src/components/text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -68,8 +69,33 @@ export default function PlayerScreen() {
   const scrimStyle = useAnimatedStyle(() => ({ opacity: scrim.value }));
   const openPanel = (t: PanelTab) => {
     haptic.selection();
-    setPanel(t);
+    setPanel((cur) => (cur === t ? null : t));
   };
+  const BAR_H = 56;
+  // Swipe down anywhere on the player (when the panel is closed) to dismiss it.
+  const dragY = useSharedValue(0);
+  const goBack = () => router.back();
+  const dismiss = Gesture.Pan()
+    .activeOffsetY([18, 9999])
+    .failOffsetX([-24, 24])
+    .onUpdate((e) => {
+      if (panel) return;
+      dragY.value = Math.max(0, e.translationY);
+    })
+    .onEnd((e) => {
+      if (panel) return;
+      if (dragY.value > 140 || e.velocityY > 1100) {
+        dragY.value = withTiming(winH, { duration: 200 });
+        runOnJS(goBack)();
+      } else {
+        dragY.value = withSpring(0, { damping: 20, stiffness: 220 });
+      }
+    });
+  const dragStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: dragY.value }, { scale: 1 - Math.min(0.06, dragY.value / 2500) }],
+    borderRadius: dragY.value > 0 ? 28 : 0,
+    overflow: "hidden",
+  }));
   const { data: library, deviceId } = useLibrary();
   const { isDownloaded, isDownloading, downloadTrack } = useDownloads();
   const isFav = !!(current && library?.favorites?.some((f) => f.id === current.id));
@@ -99,10 +125,12 @@ export default function PlayerScreen() {
   const upcomingCount = Math.max(0, queue.length - index - 1);
 
   return (
-    <View style={styles.container} testID="player-screen">
+    <Animated.View style={[styles.container, dragStyle]} testID="player-screen">
       <ArtworkBackdrop uri={current.artwork} />
 
-      <View style={[styles.content, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }]}>
+      <View style={[styles.content, { paddingTop: insets.top + 8, paddingBottom: Math.max(insets.bottom, 8) + BAR_H + 16 }]}>
+        <GestureDetector gesture={dismiss}>
+        <View collapsable={false} testID="player-drag-zone">
         <View style={styles.topBar}>
           <Pressable testID="player-close" onPress={() => router.back()} hitSlop={12} style={styles.topBtn}>
             <Icon name="chevron-down" size={28} color={WHITE} />
@@ -123,7 +151,10 @@ export default function PlayerScreen() {
             contentFit="cover"
             transition={400}
           />
+          <View style={StyleSheet.absoluteFill} />
         </View>
+        </View>
+        </GestureDetector>
 
         <View style={styles.info}>
           <View style={{ flex: 1 }}>
@@ -224,10 +255,21 @@ export default function PlayerScreen() {
           </AnimatedPressable>
         </View>
 
-        <View style={{ flex: 1 }} />
+      </View>
+
+      <Animated.View pointerEvents={panel ? "auto" : "none"} style={[styles.scrim, scrimStyle]}>
+        <Pressable style={{ flex: 1 }} onPress={() => setPanel(null)} testID="player-panel-scrim" />
+      </Animated.View>
+      <Animated.View
+        pointerEvents={panel ? "auto" : "none"}
+        style={[styles.panel, { top: insets.top + 56, bottom: BAR_H + Math.max(insets.bottom, 8) + 8 }, panelStyle]}
+        testID="player-panel"
+      >
+        {panel ? <PlayerPanel tab={panel} onTabChange={setPanel} onClose={() => setPanel(null)} /> : null}
+      </Animated.View>
 
         {/* YouTube-Music style bottom bar: Up next · Lyrics · Related */}
-        <View style={[styles.panelBar, { marginBottom: Math.max(insets.bottom, 8) }]} testID="player-panel-bar">
+        <View style={[styles.panelBar, { bottom: Math.max(insets.bottom, 8) }]} testID="player-panel-bar">
           {(
             [
               { key: "upnext", label: "Up next", icon: "list" },
@@ -241,33 +283,21 @@ export default function PlayerScreen() {
               onPress={() => openPanel(t.key)}
               scaleTo={0.94}
               hitSlop={0}
-              style={styles.panelTab}
+              style={[styles.panelTab, panel === t.key && { backgroundColor: colors.brandPrimary }]}
             >
               <View>
-                <Icon name={t.icon} size={18} color={WHITE} />
+                <Icon name={t.icon} size={18} color={panel === t.key ? colors.onBrandPrimary : WHITE} />
                 {t.key === "upnext" && upcomingCount > 0 ? (
                   <View style={[styles.queueBadge, { backgroundColor: colors.brandPrimary }]}>
                     <Text style={styles.repeatBadgeText}>{upcomingCount > 99 ? "99+" : upcomingCount}</Text>
                   </View>
                 ) : null}
               </View>
-              <Text style={styles.panelTabText}>{t.label}</Text>
+              <Text style={[styles.panelTabText, panel === t.key && { color: colors.onBrandPrimary }]}>{t.label}</Text>
             </AnimatedPressable>
           ))}
         </View>
-      </View>
-
-      <Animated.View pointerEvents={panel ? "auto" : "none"} style={[styles.scrim, scrimStyle]}>
-        <Pressable style={{ flex: 1 }} onPress={() => setPanel(null)} testID="player-panel-scrim" />
-      </Animated.View>
-      <Animated.View
-        pointerEvents={panel ? "auto" : "none"}
-        style={[styles.panel, { top: insets.top + 56 }, panelStyle]}
-        testID="player-panel"
-      >
-        {panel ? <PlayerPanel tab={panel} onTabChange={setPanel} onClose={() => setPanel(null)} /> : null}
-      </Animated.View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -412,8 +442,11 @@ const styles = StyleSheet.create({
   },
   repeatBadgeText: { color: "#FFF", fontSize: 9, fontWeight: "800" },
   panelBar: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    zIndex: 30,
     flexDirection: "row",
-    marginHorizontal: 20,
     padding: 4,
     borderRadius: 18,
     backgroundColor: "rgba(255,255,255,0.12)",
@@ -421,8 +454,8 @@ const styles = StyleSheet.create({
   },
   panelTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: 14 },
   panelTabText: { color: WHITE, fontSize: 13, fontWeight: "700" },
-  scrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)" },
-  panel: { position: "absolute", left: 0, right: 0, bottom: 0 },
+  scrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 10 },
+  panel: { position: "absolute", left: 0, right: 0, zIndex: 20 },
   queueBadge: {
     position: "absolute",
     top: -6,

@@ -1,5 +1,7 @@
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/text";
 
@@ -19,11 +21,20 @@ export function MiniPlayer({ bottomOffset }: { bottomOffset: number }) {
   if (!current) return null;
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;
 
+  const open = () => router.push("/player");
+  const swipeUp = Gesture.Pan()
+    .activeOffsetY([-9999, -14])
+    .failOffsetX([-24, 24])
+    .onEnd((e) => {
+      if (e.translationY < -30 || e.velocityY < -600) runOnJS(open)();
+    });
+
   return (
     <View style={[styles.wrap, { bottom: bottomOffset + 8 }]} pointerEvents="box-none">
+      <GestureDetector gesture={swipeUp}>
       <Pressable
         testID="mini-player"
-        onPress={() => router.push("/player")}
+        onPress={open}
         style={styles.press}
       >
         <Glass intensity={80} style={styles.pill}>
@@ -62,6 +73,7 @@ export function MiniPlayer({ bottomOffset }: { bottomOffset: number }) {
           </View>
         </Glass>
       </Pressable>
+      </GestureDetector>
     </View>
   );
 }

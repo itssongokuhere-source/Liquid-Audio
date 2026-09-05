@@ -7,7 +7,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { cancelAnimation, interpolateColor, useAnimatedStyle, useFrameCallback, useSharedValue, withRepeat, withSequence, withSpring, withTiming, type SharedValue } from "react-native-reanimated";
 import { Text } from "@/src/components/text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -64,6 +64,13 @@ function useSmoothPosition(position: number, playing: boolean) {
   return playing ? smooth : position;
 }
 
+function nextTextAt(lines: Line[], i: number): number {
+  for (let k = i + 1; k < lines.length; k++) {
+    if (lines[k].text || lines[k].gap) return lines[k].at;
+  }
+  return lines[i].at + 4;
+}
+
 /** Insert Apple-Music style "• • •" markers for intros and long instrumental gaps. */
 function withGaps(lines: Line[]): Line[] {
   const out: Line[] = [];
@@ -103,6 +110,20 @@ export function LyricsView({ embedded = false }: { embedded?: boolean }) {
   const { current, seek, isPlaying } = useAudio();
   const { position: rawPosition } = useAudioProgress();
   const position = useSmoothPosition(rawPosition, isPlaying);
+  // Frame-accurate clock for the karaoke sweep (runs on the UI thread at the display refresh rate).
+  const clock = useSharedValue(rawPosition + LOOKAHEAD);
+  const anchorPos = useSharedValue(rawPosition);
+  const anchorAt = useSharedValue(Date.now());
+  const playingSV = useSharedValue(isPlaying ? 1 : 0);
+  useEffect(() => {
+    anchorPos.value = rawPosition;
+    anchorAt.value = Date.now();
+    playingSV.value = isPlaying ? 1 : 0;
+  }, [rawPosition, isPlaying, anchorPos, anchorAt, playingSV]);
+  useFrameCallback(() => {
+    const elapsed = playingSV.value ? (Date.now() - anchorAt.value) / 1000 : 0;
+    clock.value = anchorPos.value + elapsed + LOOKAHEAD;
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["lyrics", current?.id],
@@ -190,7 +211,9 @@ export function LyricsView({ embedded = false }: { embedded?: boolean }) {
                   text={line.text}
                   active={isActive}
                   past={isPast}
-                  progress={isActive ? lineProgress : isPast ? 1 : 0}
+                  start={line.at}
+                  end={nextTextAt(lines, i)}
+                  clock={clock}
                   brand={colors.brandPrimary}
                 />
               </Pressable>
@@ -255,13 +278,17 @@ function LyricLine({
   text,
   active,
   past,
-  progress,
+  start,
+  end,
+  clock,
   brand,
 }: {
   text: string;
   active: boolean;
   past: boolean;
-  progress: number;
+  start: number;
+  end: number;
+  clock: SharedValue<number>;
   brand: string;
 }) {
   const scale = useSharedValue(active ? 1 : 0.94);
@@ -274,38 +301,69 @@ function LyricLine({
     opacity: opacity.value,
     transform: [{ scale: scale.value }],
   }));
+  // Each word owns a slice of the line's time proportional to its length (karaoke sweep).
   const words = text.split(/(\s+)/);
-  const realWords = words.filter((w) => w.trim().length > 0).length;
-  const filled = active ? progress * realWords : past ? realWords : 0;
-  let counter = 0;
+  const weights = words.map((w) => (w.trim() ? Math.max(2, w.trim().length + 1) : 0));
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
+  let acc = 0;
   return (
     <Animated.View style={[styles.activeRow, { transformOrigin: "left center" }, anim]}>
       {words.map((w, idx) => {
         if (!w.trim()) return <Text key={idx} style={styles.activeWord}> </Text>;
-        const i = counter;
-        counter += 1;
-        const wordProgress = Math.max(0, Math.min(1, filled - i));
-        return <Word key={idx} text={w} progress={wordProgress} active={active} brand={brand} />;
+        const ws = acc / total;
+        acc += weights[idx];
+        const we = acc / total;
+        return (
+          <Word key={idx} text={w} active={active} past={past} brand={brand} clock={clock} start={start} end={end} ws={ws} we={we} />
+        );
       })}
     </Animated.View>
   );
 }
 
-function Word({ text, progress, active, brand }: { text: string; progress: number; active: boolean; brand: string }) {
-  const p = useSharedValue(progress);
-  useEffect(() => {
-    p.value = withTiming(progress, { duration: 180 });
-  }, [progress, p]);
-  const anim = useAnimatedStyle(() => ({
-    opacity: 0.45 + 0.55 * p.value,
-    transform: [{ translateY: active ? -3 * p.value * (1 - p.value) * 4 : 0 }],
-    textShadowRadius: active ? 14 * p.value : 0,
-  }));
+function Word({
+  text,
+  active,
+  past,
+  brand,
+  clock,
+  start,
+  end,
+  ws,
+  we,
+}: {
+  text: string;
+  active: boolean;
+  past: boolean;
+  brand: string;
+  clock: SharedValue<number>;
+  start: number;
+  end: number;
+  ws: number;
+  we: number;
+}) {
+  const anim = useAnimatedStyle(() => {
+    if (!active) {
+      return { opacity: past ? 1 : 0.9, color: WHITE, textShadowRadius: 0, transform: [{ translateY: 0 }] };
+    }
+    const span = Math.max(0.4, end - start);
+    const lp = Math.min(1, Math.max(0, (clock.value - start) / span));
+    // smooth sweep across this word's slice, with a soft 15% feather so it never "steps"
+    const feather = (we - ws) * 0.15;
+    const wp = Math.min(1, Math.max(0, (lp - ws + feather) / (we - ws + feather * 2)));
+    const eased = wp * wp * (3 - 2 * wp);
+    return {
+      opacity: 0.42 + 0.58 * eased,
+      color: interpolateColor(eased, [0, 1], ["rgba(255,255,255,0.55)", WHITE]),
+      textShadowRadius: 16 * eased,
+      transform: [{ translateY: -3 * Math.sin(eased * Math.PI) }],
+    };
+  });
   return (
     <Animated.Text
       style={[
         styles.activeWord,
-        { color: WHITE, textShadowColor: brand, textShadowOffset: { width: 0, height: 0 }, fontFamily: "Inter-ExtraBold" },
+        { textShadowColor: brand, textShadowOffset: { width: 0, height: 0 }, fontFamily: "Inter-ExtraBold" },
         anim,
       ]}
     >

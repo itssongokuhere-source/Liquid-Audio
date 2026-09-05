@@ -339,7 +339,7 @@ export default function SearchScreen() {
               <TrackRow
                 track={item}
                 active={current?.id === item.id}
-                onPress={() => playNow(item, results)}
+                onPress={() => playNow(item)}
                 onMore={() => openActions(item)}
               />
             </View>

@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 11 — verified fixes to LiquidAudio (search hijack, YT-Music Up-Next autofill, stable device_id, swipe-down close). BACKEND (pytest /app/backend/tests/test_iteration11.py, 3/3 PASS): /api/search?q=hosanna → top=null, artistSongs=[], songs[0].title='Hosanna' ✓. /api/search?q=arijit singh → top.title contains 'Arijit', artistSongs≥5 ✓. /api/search?q=kesariya → songs[0].title starts 'Kesariya', artist starts 'Arijit Singh' ✓. FRONTEND (web 390x844): (1) Home → tap first track-row → after 8.5s, 'Because you played Sang Rahiyo' section rendered with 3 visible cards (Inaam / Ranjha / Love You Zin…). All /api/library GETs used a SINGLE device_id (dev_9z82tgttfnpmtor8ozv); /api/tracks/*/recommendations fired (2 calls). Device-id race is fixed. (2) Search 'hosanna' → No 'Top result' card; 8 'Hosanna' songs listed first (Leon D'souza, Vijay Prakash, Rahul Nambiar, Sheldon Bangera, Ben Samuel, Joel Kodali + 'Hossanam', 'Yesayya Naa Praanama Hosanna…'). Tapped Ben Samuel row → mini-player title = 'Hosanna' ✓. Opened player → player-tab-upnext → panel shows 'Next in queue · 10' with related songs (Aaraathanai, Ummai Nambi Vanthen, En Nesarae, Unga Mugathai, Aaviyanavarae, Nandri Nandri, Thanimai Vaatumpothu, Jehovah Nissi…) all DIFFERENT from the 8 'Hosanna' search titles (overlap=empty set) ✓. queue-tabs absent ✓. queue-close closes panel ✓. (3) player-drag-zone swipe-down (13 steps × 20px = 260px) DOES close player: player-panel-bar count=0 after release, home-screen visible ✓. Reopened via mini-player → player-close chevron also still works ✓. (4) Home Trending: tapped first trending artwork card 'Ishq' → Up Next shows 'Next in queue · 22' with Akhiyaan Gulaab / Narayan Mil Jayega / Sahiba / Thumkeshwari / Kabhi Shaam Dhale / Pal Pal / Rula Ke Gaya Ishq / Pehle Bhi Main — i.e. the REST of the trending list (matches trending titles ≥5) ✓. (5) REGRESSION: Hindi chip switches header to 'Trending in Hindi' ✓; home-refresh works ✓; Settings opens (settings-screen present) ✓; no red console errors (only ignored audio/decode/deprecation warnings). All 6 acceptance items green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11.py",
+    "/app/test_reports/pytest/iteration11.xml",
+    "/app/test_reports/iteration_11.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "src/lib/device.ts now correctly caches a single `pending` promise and a `cached` value — concurrent first callers share one Promise; useDeviceId subscribes with useState/useEffect. Fix verified: only one device_id was observed across all /api/library GETs in this session.",
+    "app/player.tsx dismiss Pan gesture now correctly closes the player via 260px vertical mouse-emulated drag on player-drag-zone. The overlay-over-<img> approach (mentioned in problem statement) prevents the image from swallowing the drag; verified working."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (3/3)", "frontend": "100% (6/6 acceptance items)"},
+  "seed_data_creation": "None. All library entries created under an ephemeral per-install device_id (auto-cleaned via user localStorage; no server-side seed).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 4 user-reported fixes verified GREEN. To retest: EXPO_PUBLIC_BACKEND_URL is https://rhythm-glass-ui.preview.emergentagent.com. Frontend must be tested at 390x844 in a FRESH browser context (device_id is persisted per profile). Search flow: on '/search' page, tap first `[data-testid^=track-row-]` after typing 'hosanna' and pressing Enter; mini-player title should read 'Hosanna' and player-tab-upnext should show a queue of related (not-Hosanna) songs ≥5. For Trending flow: use `[data-testid^=artwork-card-]` — the trending row shows ~11 cards after the SectionTitle 'Trending in For You'. Backend tests file: /app/backend/tests/test_iteration11.py.",
+  "rca_of_issue": "Fixes verified: (1) getDeviceId() in src/lib/device.ts now uses a shared `pending` Promise so concurrent first callers get the same id — resolved the multi-device_id race. (2) player-drag-zone (app/player.tsx) has an overlay so the underlying <img> no longer swallows the pan gesture on web; onEnd fires and router.back() dismisses the panel. (3) audio-context queue handling: tapping a Search track no longer queues the full search list — it queues only that song and autofills Up Next with related tracks (observed 10 related songs, none from the 8-item Hosanna search list). (4) Search endpoint: artist-name matches no longer hijack song-title queries; 'hosanna' cleanly returns song rows with no top-result artist card, while 'arijit singh' still returns a top card + artistSongs. All 3 backend assertions and all 6 frontend acceptance items pass."
+}

@@ -109,6 +109,11 @@ auto updates like big-company apps (delivered via Publish → build flow).
 - **Home refresh** (iteration 9): header refresh button + pull‑to‑refresh; `LiquidRefresh` pill; rebuilds
   mixes (`refresh=true`), refetches trending, reshuffles the feed.
 
+- **Iterations 10‑12**: UI‑thread karaoke sweep (frame clock), swipe‑down closes player / swipe‑up opens
+  mini‑player, custom liquid swipe‑down refresh, "Because you played" rows, single‑song play from search
+  auto‑fills Up Next with related songs, search top‑artist only on close name match, artist‑aware suggestions,
+  personal language chips (core 4 + languages the user actually played). Stable device id (shared promise).
+
 ## How to ship an update to users
 1. Publish → build the new APK on Emergent, upload it to KiwiFile (or any direct link host).
 2. In the app: Settings → About → tap the version row 5× → fill version, APK link, notes, PIN → Publish.

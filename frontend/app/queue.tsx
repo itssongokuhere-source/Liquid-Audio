@@ -16,7 +16,7 @@ export default function QueueScreen() {
     <View style={styles.container}>
       <ArtworkBackdrop uri={current?.artwork} intensity={92} />
       <View style={{ flex: 1, paddingTop: insets.top }}>
-        <PlayerPanel tab={tab} onTabChange={setTab} onClose={() => router.back()} />
+        <PlayerPanel tab={tab} onTabChange={setTab} onClose={() => router.back()} showTabs />
       </View>
     </View>
   );

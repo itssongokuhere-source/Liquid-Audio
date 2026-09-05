@@ -241,3 +241,28 @@ frontend:
   - task: "Home refresh: header button home-refresh (spins while refreshing) + pull-to-refresh RefreshControl; LiquidRefresh pill (testID liquid-refresh) while rebuilding; refetches trending, rebuilds mixes (refresh=true), invalidates library, reshuffles feed (featured/trending order changes)"
     implemented: true
     needs_retesting: true
+
+## Iteration 10 — Karaoke sweep, swipe gestures, pull-to-refresh, Because-you-played, chip fix (main agent)
+frontend:
+  - task: "Lyrics karaoke: UI-thread frame clock (useFrameCallback), character-weighted per-word sweep with feather; no stepping"
+    implemented: true
+    needs_retesting: true
+  - task: "Player: swipe down on top bar/artwork zone (testID player-drag-zone) closes player; mini-player swipe up opens player; panel tabs untouched"
+    implemented: true
+    needs_retesting: true
+  - task: "Home: custom swipe-down PullToRefresh (liquid blobs header, testID liquid-refresh) + header button; header/chips excluded from the pull gesture (hitSlop) so genre chips keep working"
+    implemented: true
+    needs_retesting: true
+  - task: "Home: 'Because you played <song>' rows (testID because-<trackId>) from the 2 most recent distinct-artist songs"
+    implemented: true
+    needs_retesting: true
+
+## Iteration 12 — Personal language chips + artist-aware suggestions (main agent)
+frontend:
+  - task: "Home chips: For You/Hindi/English/Punjabi + up to 3 languages from the listener's recent plays (Tamil/Telugu/Bengali/Malayalam removed by default)"
+    implemented: true
+    needs_retesting: true
+backend:
+  - task: "GET /api/search/suggest: artists only when typed text is part of the artist name (max 2, first), then songs (exact title first, variants last), then 2 albums"
+    implemented: true
+    needs_retesting: true
