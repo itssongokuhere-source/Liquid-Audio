@@ -1,18 +1,20 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AdaptiveTheme } from "@/src/components/adaptive-theme";
 import { AudioProvider } from "@/src/components/audio-context";
 import { DownloadsProvider } from "@/src/components/downloads-context";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { JamProvider } from "@/src/components/jam-context";
+import { MiniPlayer } from "@/src/components/mini-player";
+import { TAB_BAR_BASE } from "@/src/lib/layout";
 import { FONTS } from "@/src/components/text";
 import { ToastProvider, useToast } from "@/src/components/toast";
 import { TrackActionsProvider } from "@/src/components/track-actions";
@@ -25,6 +27,17 @@ import { setAppScheme, useTheme, type ColorScheme } from "@/src/theme";
 LogBox.ignoreAllLogs(true);
 
 const SCHEME_KEY = "liquidaudio.scheme";
+
+const FULLSCREEN_ROUTES = ["/player", "/lyrics", "/queue", "/jam"];
+const TAB_ROUTES = ["/", "/search", "/equalizer", "/library"];
+
+function GlobalMiniPlayer() {
+  const pathname = usePathname();
+  const insets = useSafeAreaInsets();
+  if (FULLSCREEN_ROUTES.some((r) => pathname.startsWith(r))) return null;
+  const onTabs = TAB_ROUTES.includes(pathname);
+  return <MiniPlayer bottomOffset={onTabs ? TAB_BAR_BASE + insets.bottom : insets.bottom} />;
+}
 
 function ThemedStack() {
   const { scheme, colors } = useTheme();
@@ -52,7 +65,9 @@ function ThemedStack() {
         />
         <Stack.Screen name="settings" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="jam" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
+        <Stack.Screen name="mix/[id]" options={{ animation: "slide_from_right" }} />
       </Stack>
+      <GlobalMiniPlayer />
     </>
   );
 }

@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Glass } from "@/src/components/glass";
 import { Icon, type IconName } from "@/src/components/icon";
-import { MiniPlayer } from "@/src/components/mini-player";
 import { TAB_BAR_BASE } from "@/src/lib/layout";
 import { useTheme } from "@/src/theme";
 
@@ -17,7 +16,6 @@ function tabIcon(name: IconName) {
 export default function TabsLayout() {
   const { colors, scheme } = useTheme();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = TAB_BAR_BASE + insets.bottom;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -64,7 +62,6 @@ export default function TabsLayout() {
           options={{ title: "Library", tabBarIcon: tabIcon("library") }}
         />
       </Tabs>
-      <MiniPlayer bottomOffset={tabBarHeight} />
     </View>
   );
 }

@@ -174,6 +174,22 @@ export async function searchAll(q: string) {
   return getJSON<SearchResults>(`/search?q=${encodeURIComponent(q)}`);
 }
 
+export type Mix = {
+  id: string;
+  title: string;
+  subtitle: string;
+  color: string;
+  covers: string[];
+  tracks: Track[];
+};
+
+export async function fetchMixes(deviceId: string, refresh = false) {
+  const d = await getJSON<{ day: string; mixes: Mix[] }>(
+    `/home/mixes?device_id=${encodeURIComponent(deviceId)}${refresh ? "&refresh=true" : ""}`,
+  );
+  return d.mixes;
+}
+
 export type SearchSuggestion = { text: string };
 export type SearchEntity = {
   type: "song" | "artist" | "album";

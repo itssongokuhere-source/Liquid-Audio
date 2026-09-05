@@ -42,7 +42,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const toast = useToast();
   const { settings, update } = useSettings();
-  const { autoplay, toggleAutoplay } = useAudio();
+  const { autoplay, toggleAutoplay, hasTrack } = useAudio();
   const { downloads, usedBytes, clearAll } = useDownloads();
   const updates = useUpdates();
 
@@ -121,7 +121,7 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 + (hasTrack ? 80 : 0) }]}
         showsVerticalScrollIndicator={false}
       >
         {updates.status === "available" || updates.status === "downloading" || updates.status === "installing" ? (

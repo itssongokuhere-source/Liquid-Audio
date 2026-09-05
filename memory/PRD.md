@@ -89,6 +89,23 @@ auto updates like big-company apps (delivered via Publish → build flow).
 - Generated icon set in `assets/icons/` (scripts/gen_icons.py). App version 1.1.0 / versionCode 2.
 - Verified by testing agent: 14/14 backend tests + all frontend flows (iteration_5.json).
 
+## Implemented (iterations 6–8)
+- **Search**: YouTube‑Music autocomplete (`/api/search/suggest`), recent/trending searches, structured
+  results (`/api/search`: top artist card, artist top songs, deduped songs, remix/lofi hidden unless asked).
+- **Artist attribution**: singers first, `artists[]` with roles; ⋯ sheet lists every credited artist.
+- **Jam (listen together)**: `/api/jam` REST + WebSocket `/api/jam/ws/{code}`; code/link/QR, host→guest
+  sync with server clock offset, guest controls, deep link `/jam?code=`.
+- **Player**: YouTube‑Music‑style bottom bar Up next · Lyrics · Related opening a slide‑up `PlayerPanel`
+  (drag‑reorder queue, autoplay, related list). `/queue` and `/lyrics` routes kept as wrappers.
+- **Lyrics**: Apple‑style word glow, gap dots, auto‑timed plain lyrics, multi‑query LRCLIB synced lookup,
+  **Hinglish romanisation** (Devanagari→Latin, `script=native` to disable), smooth interpolated clock.
+- **Made for you mixes**: `/api/home/mixes` (Your Mix 1‑3, Discover, On Repeat, Favourites, language mixes)
+  from `libraries.recent/favorites/plays`, seeded daily, cached in `mixes_cache`; `/mix/[id]` screen.
+- **System media controls**: `player.setActiveForLockScreen` (native only; next/prev not exposed by expo-audio 57).
+- Equalizer faders rewritten with gesture‑handler (UI thread). NOTE: EQ is visual/persisted only — real DSP
+  needs a native module (user chose to skip for now).
+- Global mini‑player in root layout; perf: `useAudioProgress` split, query staleTime.
+
 ## How to ship an update to users
 1. Publish → build the new APK on Emergent, upload it to KiwiFile (or any direct link host).
 2. In the app: Settings → About → tap the version row 5× → fill version, APK link, notes, PIN → Publish.

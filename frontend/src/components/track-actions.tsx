@@ -126,6 +126,7 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={styles.sheetWrap}
         >
+          <Pressable style={{ flex: 1 }} onPress={close} testID="track-actions-dismiss" />
           <Glass intensity={90} style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
             {track ? (
               <>

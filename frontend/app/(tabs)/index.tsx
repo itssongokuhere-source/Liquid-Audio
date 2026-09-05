@@ -21,7 +21,8 @@ import { TrackRow } from "@/src/components/track-row";
 import { useTrackActions } from "@/src/components/track-actions";
 import { fetchTrending, type Track } from "@/src/lib/api";
 import { contentBottomPad } from "@/src/lib/layout";
-import { useLibrary } from "@/src/lib/hooks";
+import { useLibrary, useMixes } from "@/src/lib/hooks";
+import { MixCard } from "@/src/components/mix-card";
 import { makeStyles, useTheme } from "@/src/theme";
 
 const GENRES = [
@@ -59,6 +60,7 @@ export default function HomeScreen() {
     queryFn: () => fetchTrending(genre),
   });
   const { data: library } = useLibrary();
+  const { data: mixes = [] } = useMixes();
   const recent = library?.recent ?? [];
 
   const hero = tracks[0];
@@ -177,6 +179,22 @@ export default function HomeScreen() {
               </View>
             </View>
           </Pressable>
+        ) : null}
+
+        {mixes.length ? (
+          <>
+            <SectionTitle text="Made for you" />
+            <FlatList
+              horizontal
+              data={mixes}
+              keyExtractor={(m) => m.id}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.hRow}
+              renderItem={({ item }) => (
+                <MixCard mix={item} onPress={() => router.push(`/mix/${item.id}`)} />
+              )}
+            />
+          </>
         ) : null}
 
         <SectionTitle text={`Trending in ${genre}`} />

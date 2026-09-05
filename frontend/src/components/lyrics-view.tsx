@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -34,6 +34,34 @@ function parseLRC(lrc: string): Line[] {
     }
   }
   return out.sort((a, b) => a.at - b.at);
+}
+
+// Lines light up a touch before the vocal lands (feels "on the beat" like Apple Music).
+const LOOKAHEAD = 0.45;
+
+/**
+ * expo-audio reports position only a few times per second; interpolate between updates so
+ * word-by-word highlighting runs at the display's frame rate without stalls.
+ */
+function useSmoothPosition(position: number, playing: boolean) {
+  const [smooth, setSmooth] = useState(position);
+  const anchor = useRef({ pos: position, at: Date.now() });
+  useEffect(() => {
+    anchor.current = { pos: position, at: Date.now() };
+    setSmooth(position);
+  }, [position]);
+  useEffect(() => {
+    if (!playing) return;
+    let raf: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const { pos, at } = anchor.current;
+      setSmooth(pos + (Date.now() - at) / 1000);
+      raf = setTimeout(tick, 50);
+    };
+    raf = setTimeout(tick, 50);
+    return () => clearTimeout(raf);
+  }, [playing]);
+  return playing ? smooth : position;
 }
 
 /** Insert Apple-Music style "• • •" markers for intros and long instrumental gaps. */
@@ -72,8 +100,9 @@ function autoTime(plain: string, duration: number): Line[] {
 export function LyricsView({ embedded = false }: { embedded?: boolean }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { current, seek } = useAudio();
-  const { position } = useAudioProgress();
+  const { current, seek, isPlaying } = useAudio();
+  const { position: rawPosition } = useAudioProgress();
+  const position = useSmoothPosition(rawPosition, isPlaying);
 
   const { data, isLoading } = useQuery({
     queryKey: ["lyrics", current?.id],
@@ -93,7 +122,7 @@ export function LyricsView({ embedded = false }: { embedded?: boolean }) {
     if (!lines.length) return -1;
     let idx = -1;
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].at <= position + 0.15) idx = i;
+      if (lines[i].at <= position + LOOKAHEAD) idx = i;
       else break;
     }
     return idx;

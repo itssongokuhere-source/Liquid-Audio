@@ -427,22 +427,64 @@ def _dedupe(songs: List[dict], exclude: set) -> List[dict]:
 async def recommendations(track_id: str,
                           exclude: Optional[str] = None,
                           limit: int = Query(20, ge=1, le=50)):
-    """Similar songs for the autoplay section of the queue (YouTube-Music style)."""
+    """Related songs for the player (YouTube-Music style): similar tracks + the artist's other
+    hits + second-level recommendations, without duplicates, remixes or the song itself."""
     excluded = {track_id} | {e for e in (exclude or "").split(",") if e}
-    recs = await _reco_songs(track_id)
-    if len(recs) < 8:
-        try:
-            detail = await js_get({"__call": "song.getDetails", "pids": track_id})
-            seed = _songs_from(detail, track_id)
-            if seed:
-                amap = (seed[0].get("more_info") or {}).get("artistMap") or {}
-                primary = amap.get("primary_artists") or amap.get("artists") or []
-                if primary:
-                    recs += await _artist_top_songs(str(primary[0].get("id")))
-        except Exception as e:
-            logger.warning("reco fallback failed: %s", e)
-    tracks = [normalize_song(s) for s in _dedupe(recs, excluded)]
-    return {"tracks": tracks[:limit]}
+    seed_title = None
+    artist_ids: List[str] = []
+    try:
+        detail = await js_get({"__call": "song.getDetails", "pids": track_id})
+        seed = _songs_from(detail, track_id)
+        if seed:
+            norm = normalize_song(seed[0])
+            seed_title = norm["title"]
+            artist_ids = [a["id"] for a in norm["artists"] if a.get("id")][:2]
+    except Exception as e:
+        logger.warning("reco seed failed: %s", e)
+
+    first = await _reco_songs(track_id)
+    second_groups, artist_groups = await _asyncio.gather(
+        _asyncio.gather(*[_reco_songs(str(s["id"])) for s in first[:2]]),
+        _asyncio.gather(*[_artist_top_songs(a) for a in artist_ids]),
+    )
+    allow_variants = _is_variant(seed_title or "")
+    seed_key = _variant_key(seed_title or "")
+
+    def clean(raw: List[dict]) -> List[dict]:
+        out = []
+        for s in raw:
+            t = normalize_song(s)
+            if t["id"] in excluded:
+                continue
+            if not allow_variants and _is_variant(t["title"]):
+                continue
+            if _variant_key(t["title"]) == seed_key:  # same song, other release
+                continue
+            out.append(t)
+        return out
+
+    primary = clean(first)
+    artist_hits = clean([s for g in artist_groups for s in g])
+    deeper = clean([s for g in second_groups for s in g])
+    _random.shuffle(artist_hits)
+    _random.shuffle(deeper)
+
+    blended: List[dict] = primary[:4]
+    pools = [primary[4:], artist_hits, deeper]
+    while any(pools) and len(blended) < limit * 2:
+        for p in pools:
+            if p:
+                blended.append(p.pop(0))
+
+    # de-duplicate by normalised title + duration (same track on several albums)
+    seen_keys, result = set(), []
+    for t in _dedupe(blended, excluded):
+        k = _variant_key(t["title"])
+        if k in seen_keys:
+            continue
+        seen_keys.add(k)
+        result.append(t)
+    return {"tracks": result[:limit]}
 
 
 @api_router.get("/tracks/{track_id}/radio")
@@ -521,6 +563,60 @@ async def stream_proxy(track_id: str, request: Request, q: str = "320"):
 
 import re as _re
 
+DEVANAGARI_RE = _re.compile(r"[\u0900-\u097F]")
+_IAST_MAP = [("ā", "aa"), ("ī", "ee"), ("ū", "oo"), ("ṝ", "ri"), ("ṛ", "ri"), ("ṅ", "n"), ("ñ", "n"),
+             ("ṭ", "t"), ("ḍ", "d"), ("ṇ", "n"), ("ś", "sh"), ("ṣ", "sh"), ("ṃ", "n"), ("ḥ", "h"),
+             ("ḷ", "l"), ("ē", "e"), ("ō", "o"), ("ai", "ai"), ("au", "au")]
+
+
+def _hinglish_word(w: str) -> str:
+    """IAST → casual Hinglish spelling (drop diacritics, final schwa, common clusters)."""
+    core = _re.match(r"^([^\wāīūṝṛṅñṭḍṇśṣṃḥḷēō]*)(.*?)([^\wāīūṝṛṅñṭḍṇśṣṃḥḷēō]*)$", w, _re.U)
+    pre, body, post = core.groups() if core else ("", w, "")
+    if not body:
+        return w
+    b = body
+    # final schwa deletion: "tuma" -> "tum", "barasāta" -> "barasaat" (keep single-letter / vowel-final words)
+    if len(b) > 2 and b.endswith("a") and not b.endswith(("aa", "ā", "ya")) and b[-2] not in "aeiouāīū":
+        b = b[:-1]
+    # medial schwa deletion after the first syllable: "barasāta" -> "barsāta" (never touch the first vowel)
+    if len(b) > 5:
+        fv = _re.search(r"[aeiouāīū]", b)
+        if fv:
+            cut = fv.end()
+            b = b[:cut] + _re.sub(r"(?<=[^aeiouāīū])a(?=[rlnmsk][aeiouāīū])", "", b[cut:])
+    # long ī / ū at the end read naturally as "i" / "u" in Hinglish ("hi", "zindagi", "tu")
+    b = _re.sub(r"ī$", "i", b)
+    b = _re.sub(r"ū$", "u", b)
+    for src, dst in _IAST_MAP:
+        b = b.replace(src, dst)
+    b = b.replace("ch", "ch").replace("ph", "ph")
+    return pre + b + post
+
+
+def romanize(text: str) -> str:
+    """Devanagari → Hinglish (Latin) while preserving LRC timestamps and punctuation."""
+    if not text or not DEVANAGARI_RE.search(text):
+        return text
+    try:
+        from indic_transliteration import sanscript
+        out_lines = []
+        for line in text.split("\n"):
+            m = _re.match(r"^(\[[^\]]*\]\s*)?(.*)$", line)
+            stamp, body = (m.group(1) or ""), m.group(2)
+            if DEVANAGARI_RE.search(body):
+                iast = sanscript.transliterate(body, sanscript.DEVANAGARI, sanscript.IAST)
+                body = " ".join(_hinglish_word(w) for w in iast.split(" "))
+            out_lines.append(stamp + body)
+        return "\n".join(out_lines)
+    except Exception as e:
+        logger.warning("romanize failed: %s", e)
+        return text
+
+
+def _is_latin(text: Optional[str]) -> bool:
+    return bool(text) and not DEVANAGARI_RE.search(text or "")
+
 
 def _simplify_title(t: str) -> str:
     t = _re.sub(r"\((from|feat\.?|ft\.?|with)[^)]*\)", "", t, flags=_re.I)
@@ -540,7 +636,7 @@ def _pick_lrc(candidates: List[dict], duration: float, want_synced: bool) -> Opt
         diff = abs(d - duration) if duration and d else 6
         if duration and d and diff > 12:
             continue
-        score = -diff + (5 if c.get("syncedLyrics") else 0)
+        score = -diff + (5 if c.get("syncedLyrics") else 0) + (3 if _is_latin(c.get("syncedLyrics") or c.get("plainLyrics")) else 0)
         if score > best_score:
             best, best_score = c, score
     return best
@@ -549,7 +645,15 @@ def _pick_lrc(candidates: List[dict], duration: float, want_synced: bool) -> Opt
 @api_router.get("/lyrics")
 async def lyrics(title: str, artist: str,
                  album: str = "", duration: float = 0,
-                 track_id: Optional[str] = None):
+                 track_id: Optional[str] = None, script: str = "latin"):
+    res = await _lyrics_lookup(title, artist, album, duration, track_id)
+    if script == "latin":
+        res["synced"] = romanize(res.get("synced")) if res.get("synced") else res.get("synced")
+        res["plain"] = romanize(res.get("plain")) if res.get("plain") else res.get("plain")
+    return res
+
+
+async def _lyrics_lookup(title: str, artist: str, album: str, duration: float, track_id: Optional[str]) -> dict:
     http = await get_http()
     headers = {"User-Agent": f"{APP_NAME}/1.0 (https://liquidaudio.app)"}
     simple = _simplify_title(title)
@@ -633,6 +737,7 @@ class TrackPayload(BaseModel):
     title: str
     artist: str
     artistHandle: Optional[str] = None
+    artists: Optional[List[Dict[str, Any]]] = None
     artwork: Optional[str] = None
     duration: int = 0
     genre: Optional[str] = None
@@ -704,9 +809,136 @@ async def add_recent(body: RecentBody):
     recent = recent[:30]
     await db.libraries.update_one(
         {"device_id": body.device_id},
-        {"$set": {"recent": recent, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"recent": recent, "updated_at": datetime.now(timezone.utc).isoformat()},
+         "$inc": {f"plays.{body.track.id}": 1}},
     )
     return {"recent": recent}
+
+
+# ---------------------------------------------------------------------------
+# "Made for you" mixes — built from listening history, rotated daily
+# ---------------------------------------------------------------------------
+import hashlib as _hashlib
+
+MIX_COLORS = ["#F43F5E", "#38BDF8", "#34D399", "#FBBF24", "#A78BFA", "#FB923C", "#22D3EE", "#F472B6"]
+LANG_LABEL = {"hindi": "Hindi", "english": "English", "punjabi": "Punjabi", "tamil": "Tamil",
+              "telugu": "Telugu", "marathi": "Marathi", "bengali": "Bengali", "gujarati": "Gujarati",
+              "kannada": "Kannada", "malayalam": "Malayalam", "bhojpuri": "Bhojpuri", "haryanvi": "Haryanvi"}
+
+
+def _seeded_shuffle(items: List[Any], seed: str) -> List[Any]:
+    rnd = _random.Random(int(_hashlib.md5(seed.encode()).hexdigest()[:8], 16))
+    out = list(items)
+    rnd.shuffle(out)
+    return out
+
+
+def _mix(mid: str, title: str, subtitle: str, tracks: List[dict], color: str) -> dict:
+    uniq = _dedupe(tracks, set())
+    covers = [t["artwork"] for t in uniq[:4] if t.get("artwork")]
+    return {"id": mid, "title": title, "subtitle": subtitle, "color": color,
+            "covers": covers, "tracks": uniq[:25]}
+
+
+async def _trending_lang(lang: str) -> List[dict]:
+    try:
+        data = await js_get({"__call": "content.getTrending", "entity_type": "song", "entity_language": lang})
+        return [normalize_song(s) for s in (data or []) if isinstance(s, dict) and s.get("id")]
+    except Exception:
+        return []
+
+
+async def _build_mixes(device_id: str, day: str) -> List[dict]:
+    lib = await get_library(device_id)
+    recent: List[dict] = lib.get("recent", [])
+    favs: List[dict] = lib.get("favorites", [])
+    plays: Dict[str, int] = lib.get("plays", {}) or {}
+    history = recent + favs
+    known_ids = {t["id"] for t in history}
+    seed_base = f"{device_id}:{day}"
+
+    # --- interest model -----------------------------------------------------
+    artist_score: Dict[str, dict] = {}
+    lang_score: Dict[str, float] = {}
+    for i, t in enumerate(history):
+        w = (1.5 if t in favs else 1.0) * (1.0 - min(i, 29) / 60) * (1 + min(plays.get(t["id"], 0), 5) * 0.3)
+        credited = [a for a in (t.get("artists") or []) if a.get("id")] or (
+            [{"id": t["artistHandle"], "name": t["artist"].split(",")[0].strip()}] if t.get("artistHandle") else [])
+        for k, a in enumerate(credited[:2]):
+            entry = artist_score.setdefault(str(a["id"]), {"id": str(a["id"]), "name": a["name"], "score": 0.0, "seed": t})
+            entry["score"] += w * (1.0 if k == 0 else 0.5)
+        if t.get("genre"):
+            lang_score[t["genre"].lower()] = lang_score.get(t["genre"].lower(), 0) + w
+
+    top_artists = sorted(artist_score.values(), key=lambda a: -a["score"])[:6]
+    top_artists = _seeded_shuffle(top_artists[:4], seed_base + ":artists")[:3] if len(top_artists) > 3 else top_artists
+    top_langs = [l for l, _ in sorted(lang_score.items(), key=lambda kv: -kv[1])][:2] or ["hindi", "english"]
+
+    mixes: List[dict] = []
+    color_i = 0
+
+    # --- Your Mix 1..3 (artist-centred) -------------------------------------
+    async def artist_mix(n: int, a: dict) -> Optional[dict]:
+        top = await _artist_top_songs(a["id"])
+        recos = await _reco_songs(a["seed"]["id"]) if a.get("seed") else []
+        pool = [normalize_song(s) for s in top[:14]] + [normalize_song(s) for s in recos[:10]]
+        pool = _seeded_shuffle(pool, f"{seed_base}:mix{n}")
+        if len(pool) < 6:
+            return None
+        return _mix(f"your-mix-{n}", f"Your Mix {n}", f"{a['name']} and more", pool, MIX_COLORS[n % len(MIX_COLORS)])
+
+    artist_mixes = await _asyncio.gather(*[artist_mix(i + 1, a) for i, a in enumerate(top_artists)])
+    mixes += [m for m in artist_mixes if m]
+    color_i = len(mixes)
+
+    # --- Discover Mix (things like what you play, that you haven't played) ---
+    seeds = _seeded_shuffle(history[:12], seed_base + ":discover")[:3]
+    if not seeds:
+        seeds = (await _trending_lang("hindi"))[:2]
+    reco_groups = await _asyncio.gather(*[_reco_songs(t["id"]) for t in seeds])
+    discover = [normalize_song(s) for g in reco_groups for s in g]
+    discover = [t for t in discover if t["id"] not in known_ids]
+    if len(discover) >= 6:
+        mixes.append(_mix("discover-mix", "Discover Mix", "New songs picked for you",
+                          _seeded_shuffle(discover, seed_base + ":d"), MIX_COLORS[color_i % 8]))
+        color_i += 1
+
+    # --- On Repeat ----------------------------------------------------------
+    repeat = sorted([t for t in recent if plays.get(t["id"], 0) >= 2], key=lambda t: -plays.get(t["id"], 0))
+    if len(repeat) >= 4:
+        mixes.append(_mix("on-repeat", "On Repeat", "Songs you can't stop playing", repeat, MIX_COLORS[color_i % 8]))
+        color_i += 1
+
+    # --- Favourites Mix -----------------------------------------------------
+    if len(favs) >= 3:
+        fav_recos = await _reco_songs(_seeded_shuffle(favs, seed_base + ":f")[0]["id"])
+        pool = _seeded_shuffle(favs + [normalize_song(s) for s in fav_recos[:8]], seed_base + ":fm")
+        mixes.append(_mix("favourites-mix", "Favourites Mix", "Your liked songs, remixed daily", pool, MIX_COLORS[color_i % 8]))
+        color_i += 1
+
+    # --- Language mixes -------------------------------------------------------
+    lang_lists = await _asyncio.gather(*[_trending_lang(l) for l in top_langs])
+    for lang, lst in zip(top_langs, lang_lists):
+        pool = _seeded_shuffle(lst, f"{seed_base}:{lang}")
+        if len(pool) >= 6:
+            label = LANG_LABEL.get(lang, lang.title())
+            mixes.append(_mix(f"lang-{lang}", f"{label} Mix", f"Fresh {label} hits for today", pool, MIX_COLORS[color_i % 8]))
+            color_i += 1
+
+    return mixes[:7]
+
+
+@api_router.get("/home/mixes")
+async def home_mixes(device_id: str, refresh: bool = False):
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    key = {"device_id": device_id, "day": day}
+    if not refresh:
+        cached = await db.mixes_cache.find_one(key, {"_id": 0})
+        if cached:
+            return {"day": day, "mixes": cached["mixes"]}
+    mixes = await _build_mixes(device_id, day)
+    await db.mixes_cache.update_one(key, {"$set": {"mixes": mixes, "built_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    return {"day": day, "mixes": mixes}
 
 
 @api_router.post("/library/playlist")

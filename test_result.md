@@ -210,3 +210,28 @@ frontend:
     implemented: true
     working: "NA"
     needs_retesting: true
+
+## Iteration 8 — Player panel tabs, Made-for-you mixes, Hinglish lyrics, global mini-player (main agent)
+backend:
+  - task: "GET /api/home/mixes?device_id= (daily 'Made for you' mixes from history; cached per day; refresh=true rebuild). POST /library/recent now increments plays.{id}"
+    implemented: true
+    needs_retesting: true
+  - task: "GET /api/lyrics ?script=latin (default) romanizes Devanagari → Hinglish; prefers Latin-script LRCLIB candidates; script=native keeps original"
+    implemented: true
+    needs_retesting: true
+  - task: "GET /api/tracks/{id}/recommendations — cleaner Related: excludes the song itself/other releases of it, remixes/slowed variants, blends artist hits + 2nd-level recos, dedupes by title"
+    implemented: true
+    needs_retesting: true
+frontend:
+  - task: "Player: bottom bar player-tab-upnext/lyrics/related opens slide-up PlayerPanel (testID player-panel, close via queue-close or player-panel-scrim); bottom actions now Save/EQ/Jam (player-jam-btn); artwork sized to fit"
+    implemented: true
+    needs_retesting: true
+  - task: "Home 'Made for you' MixCard row (mix-<id>) → /mix/[id] screen (mix-screen, mix-play, mix-shuffle, mix-download)"
+    implemented: true
+    needs_retesting: true
+  - task: "Global mini-player (visible on Settings/artist/playlist/mix; hidden on player/lyrics/queue/jam); track-actions sheet dismisses on outside tap (track-actions-dismiss)"
+    implemented: true
+    needs_retesting: true
+  - task: "LyricsView: smooth interpolated clock + 0.45s lookahead"
+    implemented: true
+    needs_retesting: true

@@ -1,8 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { useMemo, useRef, useState } from "react";
-import { PanResponder, Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PanResponder, Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { Text } from "@/src/components/text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +13,7 @@ import { ArtworkBackdrop } from "@/src/components/artwork-backdrop";
 import { useDownloads } from "@/src/components/downloads-context";
 import { Icon } from "@/src/components/icon";
 import { useJam } from "@/src/components/jam-context";
+import { PlayerPanel, type PanelTab } from "@/src/components/player-panel";
 import { useToast } from "@/src/components/toast";
 import { useTrackActions } from "@/src/components/track-actions";
 import { toggleFavorite } from "@/src/lib/api";
@@ -52,6 +54,22 @@ export default function PlayerScreen() {
   const onToggle = guest ? () => jam.sendControl("toggle") : toggle;
   const onNext = guest ? () => jam.sendControl("next") : next;
   const onPrev = guest ? () => jam.sendControl("prev") : prev;
+  const { height: winH, width: winW } = useWindowDimensions();
+  // Artwork must never push the controls off-screen: fit it to the space left after the chrome.
+  const artSize = Math.max(180, Math.min(winW - 48, 360, winH - insets.top - insets.bottom - 470));
+  const [panel, setPanel] = useState<PanelTab | null>(null);
+  const panelY = useSharedValue(winH);
+  const scrim = useSharedValue(0);
+  useEffect(() => {
+    panelY.value = panel ? withSpring(0, { damping: 22, stiffness: 220, mass: 0.9 }) : withTiming(winH, { duration: 260 });
+    scrim.value = withTiming(panel ? 1 : 0, { duration: 240 });
+  }, [panel, winH, panelY, scrim]);
+  const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateY: panelY.value }] }));
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: scrim.value }));
+  const openPanel = (t: PanelTab) => {
+    haptic.selection();
+    setPanel(t);
+  };
   const { data: library, deviceId } = useLibrary();
   const { isDownloaded, isDownloading, downloadTrack } = useDownloads();
   const isFav = !!(current && library?.favorites?.some((f) => f.id === current.id));
@@ -101,7 +119,7 @@ export default function PlayerScreen() {
         <View style={styles.artWrap}>
           <Image
             source={current.artwork ? { uri: current.artwork } : undefined}
-            style={styles.art}
+            style={[styles.art, { width: artSize, height: artSize }]}
             contentFit="cover"
             transition={400}
           />
@@ -172,21 +190,6 @@ export default function PlayerScreen() {
         </View>
 
         <View style={styles.bottomActions}>
-          <AnimatedPressable testID="player-lyrics-btn" onPress={() => router.push("/lyrics")} style={styles.bottomBtn} scaleTo={0.93}>
-            <Icon name="mic-outline" size={22} color={WHITE} />
-            <Text style={styles.bottomBtnText}>Lyrics</Text>
-          </AnimatedPressable>
-          <AnimatedPressable testID="player-queue-btn" onPress={() => router.push("/queue")} style={styles.bottomBtn} scaleTo={0.93}>
-            <View>
-              <Icon name="list" size={22} color={WHITE} />
-              {upcomingCount > 0 ? (
-                <View style={[styles.queueBadge, { backgroundColor: colors.brandPrimary }]}>
-                  <Text style={styles.repeatBadgeText}>{upcomingCount > 99 ? "99+" : upcomingCount}</Text>
-                </View>
-              ) : null}
-            </View>
-            <Text style={styles.bottomBtnText}>Queue</Text>
-          </AnimatedPressable>
           <AnimatedPressable
             testID="player-download-btn"
             onPress={() => downloadTrack(current)}
@@ -215,8 +218,55 @@ export default function PlayerScreen() {
             <Icon name="options" size={22} color={WHITE} />
             <Text style={styles.bottomBtnText}>EQ</Text>
           </AnimatedPressable>
+          <AnimatedPressable testID="player-jam-btn" onPress={() => router.push("/jam")} style={styles.bottomBtn} scaleTo={0.93}>
+            <Icon name="people-outline" size={22} color={jam.room ? colors.brandPrimary : WHITE} />
+            <Text style={styles.bottomBtnText}>{jam.room ? `Jam · ${jam.members.length}` : "Jam"}</Text>
+          </AnimatedPressable>
+        </View>
+
+        <View style={{ flex: 1 }} />
+
+        {/* YouTube-Music style bottom bar: Up next · Lyrics · Related */}
+        <View style={[styles.panelBar, { marginBottom: Math.max(insets.bottom, 8) }]} testID="player-panel-bar">
+          {(
+            [
+              { key: "upnext", label: "Up next", icon: "list" },
+              { key: "lyrics", label: "Lyrics", icon: "mic-outline" },
+              { key: "related", label: "Related", icon: "sparkles-outline" },
+            ] as const
+          ).map((t) => (
+            <AnimatedPressable
+              key={t.key}
+              testID={`player-tab-${t.key}`}
+              onPress={() => openPanel(t.key)}
+              scaleTo={0.94}
+              hitSlop={0}
+              style={styles.panelTab}
+            >
+              <View>
+                <Icon name={t.icon} size={18} color={WHITE} />
+                {t.key === "upnext" && upcomingCount > 0 ? (
+                  <View style={[styles.queueBadge, { backgroundColor: colors.brandPrimary }]}>
+                    <Text style={styles.repeatBadgeText}>{upcomingCount > 99 ? "99+" : upcomingCount}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={styles.panelTabText}>{t.label}</Text>
+            </AnimatedPressable>
+          ))}
         </View>
       </View>
+
+      <Animated.View pointerEvents={panel ? "auto" : "none"} style={[styles.scrim, scrimStyle]}>
+        <Pressable style={{ flex: 1 }} onPress={() => setPanel(null)} testID="player-panel-scrim" />
+      </Animated.View>
+      <Animated.View
+        pointerEvents={panel ? "auto" : "none"}
+        style={[styles.panel, { top: insets.top + 56 }, panelStyle]}
+        testID="player-panel"
+      >
+        {panel ? <PlayerPanel tab={panel} onTabChange={setPanel} onClose={() => setPanel(null)} /> : null}
+      </Animated.View>
     </View>
   );
 }
@@ -313,16 +363,11 @@ const styles = StyleSheet.create({
   },
   jamPillText: { color: WHITE, fontSize: 13, fontWeight: "700" },
   artWrap: {
-    flex: 1,
-    maxHeight: 380,
     alignItems: "center",
     justifyContent: "center",
-    marginVertical: 16,
+    marginVertical: 12,
   },
   art: {
-    width: "100%",
-    aspectRatio: 1,
-    maxWidth: 360,
     borderRadius: 24,
     backgroundColor: "rgba(255,255,255,0.1)",
     boxShadow: "0 16px 30px rgba(0,0,0,0.5)",
@@ -366,6 +411,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   repeatBadgeText: { color: "#FFF", fontSize: 9, fontWeight: "800" },
+  panelBar: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    padding: 4,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    gap: 4,
+  },
+  panelTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: 14 },
+  panelTabText: { color: WHITE, fontSize: 13, fontWeight: "700" },
+  scrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)" },
+  panel: { position: "absolute", left: 0, right: 0, bottom: 0 },
   queueBadge: {
     position: "absolute",
     top: -6,
