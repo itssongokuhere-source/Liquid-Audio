@@ -42,7 +42,12 @@
       "expo-secure-store",
       "expo-web-browser",
       "expo-status-bar",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
+        }
+      ],
       "@react-native-vector-icons/ionicons"
     ],
     "experiments": {
