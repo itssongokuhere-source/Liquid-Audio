@@ -7,6 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAudio } from "@/src/components/audio-context";
+import { useDownloads } from "@/src/components/downloads-context";
 import { Icon } from "@/src/components/icon";
 import { TrackRow } from "@/src/components/track-row";
 import { useToast } from "@/src/components/toast";
@@ -32,6 +33,7 @@ export default function PlaylistDetailScreen() {
   const { playNow, current, hasTrack } = useAudio();
   const openActions = useTrackActions();
   const { data: library, deviceId } = useLibrary();
+  const { downloadMany } = useDownloads();
 
   const playlist = useMemo(
     () => library?.playlists?.find((p) => p.id === id),
@@ -109,17 +111,27 @@ export default function PlaylistDetailScreen() {
             <Pressable testID="playlist-back" onPress={() => router.back()} hitSlop={12} style={styles.iconBtnGlass}>
               <Icon name="chevron-back" size={24} color="#FFFFFF" />
             </Pressable>
-            <Pressable
-              testID="playlist-edit-toggle"
-              onPress={() => {
-                haptic.selection();
-                setEditing((v) => !v);
-              }}
-              hitSlop={12}
-              style={styles.iconBtnGlass}
-            >
-              <Icon name={editing ? "checkmark" : "create-outline"} size={22} color="#FFFFFF" />
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Pressable
+                testID="playlist-download-all"
+                onPress={() => order.length && downloadMany(order)}
+                hitSlop={12}
+                style={styles.iconBtnGlass}
+              >
+                <Icon name="download-outline" size={22} color="#FFFFFF" />
+              </Pressable>
+              <Pressable
+                testID="playlist-edit-toggle"
+                onPress={() => {
+                  haptic.selection();
+                  setEditing((v) => !v);
+                }}
+                hitSlop={12}
+                style={styles.iconBtnGlass}
+              >
+                <Icon name={editing ? "checkmark" : "create-outline"} size={22} color="#FFFFFF" />
+              </Pressable>
+            </View>
           </View>
           <View style={styles.heroContent}>
             <Text style={styles.plName} numberOfLines={2}>

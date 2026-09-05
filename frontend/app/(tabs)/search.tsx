@@ -18,7 +18,7 @@ import { searchTracks } from "@/src/lib/api";
 import { contentBottomPad } from "@/src/lib/layout";
 import { makeStyles, useTheme } from "@/src/theme";
 
-const SUGGESTIONS = ["Lo-fi", "House", "Techno", "Chill", "Remix", "Guitar", "Piano", "Beats"];
+const SUGGESTIONS = ["Arijit Singh", "Kesariya", "Punjabi", "Atif Aslam", "Pritam", "Lofi", "Shreya Ghoshal", "AP Dhillon"];
 
 export default function SearchScreen() {
   const styles = useStyles();

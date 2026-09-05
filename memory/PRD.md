@@ -55,15 +55,17 @@ auto updates like big-company apps (delivered via Publish → build flow).
 - Verified by testing agent: 15/15 backend tests + full frontend flows pass.
 
 ## Notes / limitations
-- **Catalog = Audius (full-length, free, legal).** Investigated the user's request for
-  YouTube Music / mainstream full songs: YouTube now hard-blocks server-side extraction
-  (SABR-only streaming + PO-token/browser challenge) so it can't be shipped reliably or
-  within store policy; iTunes/Apple is preview-only (30s). Audius is the one source that
-  streams **full songs** for free + legally, so the app uses it (verified 11MB / multi-minute
-  streams, player shows full durations). Mainstream Top-40 would require each user's own
-  Spotify/Apple Music Premium + a native build.
+- **Catalog = JioSaavn** (full-length 320kbps songs, official cover art, mainstream
+  Hindi/Bollywood + English/Punjabi/Tamil/Telugu/Bhojpuri/Bengali/Marathi/Malayalam).
+  Media URLs are DES-decrypted server-side; browse by language. Verified full multi-MB
+  streams + synced Hindi lyrics. (History: Audius=indie only; iTunes=preview only;
+  YouTube=server-side blocked by SABR/PO-token — all rejected for the user's needs.)
+- **Downloads (offline)**: songs, whole playlists, and a Library "Downloads" tab; downloaded
+  files play offline. Native-only (expo-file-system) — no-op on web preview, works on the build.
+- **Up Next / Queue** screen from the player (jump to any upcoming song).
+- Web preview may fail to decode JioSaavn's AAC stream in the browser `<audio>` element;
+  native iOS/Android builds decode fine (test on the APK).
 - Full DSP per-band EQ + true background/lock-screen audio require a native build (not Expo Go).
-- Some obscure tracks have no LRCLIB lyrics → graceful "Lyrics not available".
 - Auto/OTA updates ship on the installed build via the Publish flow.
 
 ## Backlog

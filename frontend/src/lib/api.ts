@@ -68,7 +68,9 @@ export async function fetchLyrics(t: Track): Promise<Lyrics> {
   const params = new URLSearchParams({
     title: t.title,
     artist: t.artist,
+    album: t.album ?? "",
     duration: String(Math.round(t.duration || 0)),
+    track_id: t.id,
   });
   return getJSON<Lyrics>(`/lyrics?${params.toString()}`);
 }

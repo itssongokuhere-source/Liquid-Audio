@@ -26,15 +26,15 @@ import { makeStyles, useTheme } from "@/src/theme";
 
 const GENRES = [
   "For You",
-  "Electronic",
-  "Hip-Hop/Rap",
-  "House",
-  "Pop",
-  "Techno",
-  "Trap",
-  "R&B/Soul",
-  "Deep House",
-  "Ambient",
+  "Hindi",
+  "English",
+  "Punjabi",
+  "Tamil",
+  "Telugu",
+  "Bhojpuri",
+  "Bengali",
+  "Marathi",
+  "Malayalam",
 ];
 
 export default function HomeScreen() {

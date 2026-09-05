@@ -22,6 +22,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Glass } from "@/src/components/glass";
+import { useDownloads } from "@/src/components/downloads-context";
 import { Icon } from "@/src/components/icon";
 import { useToast } from "@/src/components/toast";
 import {
@@ -48,6 +49,7 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const router = useRouter();
   const { data: library, deviceId } = useLibrary();
+  const { isDownloaded, isDownloading, downloadTrack, removeDownload } = useDownloads();
 
   const [track, setTrack] = useState<Track | null>(null);
   const [creating, setCreating] = useState(false);
@@ -195,6 +197,34 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
                         <Text style={styles.actionText}>View artist</Text>
                       </Pressable>
                     ) : null}
+
+                    <Pressable
+                      testID="action-download"
+                      style={styles.action}
+                      onPress={() => {
+                        if (isDownloaded(track.id)) removeDownload(track.id);
+                        else downloadTrack(track);
+                      }}
+                    >
+                      <Icon
+                        name={
+                          isDownloaded(track.id)
+                            ? "checkmark-circle"
+                            : isDownloading(track.id)
+                              ? "cloud-download"
+                              : "download-outline"
+                        }
+                        size={22}
+                        color={isDownloaded(track.id) ? colors.brandPrimary : colors.onSurface}
+                      />
+                      <Text style={styles.actionText}>
+                        {isDownloaded(track.id)
+                          ? "Remove download"
+                          : isDownloading(track.id)
+                            ? "Downloading…"
+                            : "Download"}
+                      </Text>
+                    </Pressable>
 
                     <View style={styles.divider} />
                     <Text style={styles.sectionLabel}>Add to playlist</Text>

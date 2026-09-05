@@ -10,7 +10,10 @@ from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone
 import uuid
+import base64
+import html as html_lib
 import httpx
+from Crypto.Cipher import DES
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -20,7 +23,9 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 APP_NAME = "LiquidAudio"
-AUDIUS_DISCOVERY = "https://api.audius.co"
+JIOSAAVN = "https://www.jiosaavn.com/api.php"
+JS_COMMON = {"_format": "json", "_marker": "0", "api_version": "4", "ctx": "web6dot0"}
+DES_KEY = b"38346591"
 LRCLIB_BASE = "https://lrclib.net"
 
 app = FastAPI(title="LiquidAudio API")
@@ -30,9 +35,8 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("liquidaudio")
 
-# Shared async HTTP client + resolved Audius hosts
+# Shared async HTTP client
 _http: Optional[httpx.AsyncClient] = None
-_audius_hosts: List[str] = []
 
 
 async def get_http() -> httpx.AsyncClient:
@@ -41,78 +45,85 @@ async def get_http() -> httpx.AsyncClient:
         _http = httpx.AsyncClient(
             timeout=20,
             follow_redirects=True,
-            headers={"User-Agent": f"{APP_NAME}/1.0"},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
         )
     return _http
 
 
-async def resolve_hosts() -> List[str]:
-    global _audius_hosts
-    if _audius_hosts:
-        return _audius_hosts
-    http = await get_http()
+def _clean(s: Optional[str]) -> str:
+    return html_lib.unescape(s or "").replace("&quot;", '"').strip()
+
+
+def decrypt_url(enc: Optional[str]) -> Optional[str]:
+    if not enc:
+        return None
     try:
-        r = await http.get(AUDIUS_DISCOVERY)
-        data = r.json().get("data", [])
-        _audius_hosts = [h for h in data if isinstance(h, str)]
+        cipher = DES.new(DES_KEY, DES.MODE_ECB)
+        dec = cipher.decrypt(base64.b64decode(enc))
+        dec = dec[: -dec[-1]]  # PKCS5 unpad
+        url = dec.decode("utf-8", "ignore")
+        return url.replace("_96.mp4", "_320.mp4")
     except Exception as e:
-        logger.warning("Failed to resolve Audius hosts: %s", e)
-    if not _audius_hosts:
-        _audius_hosts = ["https://discoveryprovider.audius.co"]
-    return _audius_hosts
+        logger.warning("decrypt failed: %s", e)
+        return None
 
 
-async def audius_get(path: str, params: Optional[dict] = None) -> Any:
+async def js_get(params: dict) -> Any:
     http = await get_http()
-    params = dict(params or {})
-    params["app_name"] = APP_NAME
-    last_err = None
-    for host in await resolve_hosts():
-        try:
-            r = await http.get(f"{host}/v1{path}", params=params)
-            if r.status_code == 200:
-                return r.json().get("data", [])
-            last_err = str(r.status_code)
-        except Exception as e:
-            last_err = str(e)
-            continue
-    raise HTTPException(status_code=502, detail=f"Audius unavailable: {last_err}")
+    q = dict(JS_COMMON)
+    q.update(params)
+    r = await http.get(JIOSAAVN, params=q)
+    r.raise_for_status()
+    try:
+        return r.json()
+    except Exception:
+        import json as _json
+        return _json.loads(r.text.strip())
 
 
-def normalize_track(t: dict) -> Dict[str, Any]:
-    user = t.get("user") or {}
-    art = t.get("artwork") or {}
-    artwork = art.get("480x480") or art.get("1000x1000") or art.get("150x150")
+def _img(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    return url.replace("50x50", "500x500").replace("150x150", "500x500")
+
+
+def normalize_song(s: dict) -> Dict[str, Any]:
+    mi = s.get("more_info") or {}
+    amap = mi.get("artistMap") or {}
+    artists = amap.get("primary_artists") or amap.get("artists") or []
+    if artists:
+        artist = ", ".join(_clean(a.get("name")) for a in artists[:2])
+        artist_id = str(artists[0].get("id")) if artists[0].get("id") else None
+    else:
+        artist = _clean((s.get("subtitle") or "").split(" - ")[0]) or "Unknown Artist"
+        artist_id = None
+    enc = mi.get("encrypted_media_url")
     return {
-        "id": str(t.get("id", "")),
-        "title": t.get("title") or "Untitled",
-        "artist": user.get("name") or user.get("handle") or "Unknown Artist",
-        "artistHandle": user.get("handle"),
-        "artwork": artwork,
-        "duration": int(t.get("duration") or 0),
-        "genre": t.get("genre"),
-        "album": None,
-        "previewUrl": None,
-        "playCount": int(t.get("play_count") or 0),
-        "favoriteCount": int(t.get("favorite_count") or 0),
+        "id": str(s.get("id", "")),
+        "title": _clean(s.get("title") or s.get("song")),
+        "artist": artist or "Unknown Artist",
+        "artistHandle": artist_id,
+        "artwork": _img(s.get("image")),
+        "duration": int(mi.get("duration") or s.get("duration") or 0),
+        "genre": s.get("language"),
+        "album": _clean(mi.get("album") or s.get("album")),
+        "previewUrl": decrypt_url(enc),
+        "playCount": int(s.get("play_count") or 0) if str(s.get("play_count") or "").isdigit() else 0,
+        "favoriteCount": 0,
     }
 
 
-def normalize_user(u: dict) -> Dict[str, Any]:
-    pic = u.get("profile_picture") or {}
-    cover = u.get("cover_photo") or {}
-    return {
-        "id": str(u.get("id", "")),
-        "name": u.get("name") or u.get("handle") or "Unknown Artist",
-        "handle": u.get("handle"),
-        "image": pic.get("480x480") or pic.get("1000x1000") or pic.get("150x150"),
-        "cover": cover.get("2000x") or cover.get("640x"),
-        "bio": u.get("bio"),
-        "isVerified": bool(u.get("is_verified")),
-        "followerCount": int(u.get("follower_count") or 0),
-        "trackCount": int(u.get("track_count") or 0),
-        "genre": None,
-    }
+def _songs_from(data: Any, pid: Optional[str] = None) -> List[dict]:
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if "songs" in data and isinstance(data["songs"], list):
+            return data["songs"]
+        if pid and pid in data and isinstance(data[pid], dict):
+            return [data[pid]]
+        if "results" in data and isinstance(data["results"], list):
+            return data["results"]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -126,90 +137,113 @@ async def root():
 @api_router.get("/tracks/trending")
 async def trending(genre: Optional[str] = None,
                    limit: int = Query(30, ge=1, le=50)):
-    params: Dict[str, Any] = {"time": "week", "limit": limit}
-    if genre and genre.strip().lower() not in ("for you", "foryou", "all", ""):
-        params["genre"] = genre
-    data = await audius_get("/tracks/trending", params)
-    tracks = [normalize_track(t) for t in data if t.get("id")]
+    language = (genre or "hindi").strip().lower()
+    if language in ("for you", "foryou", "all", ""):
+        language = "hindi"
+    try:
+        data = await js_get({
+            "__call": "content.getTrending",
+            "entity_type": "song",
+            "entity_language": language,
+        })
+        items = _songs_from(data)
+    except Exception as e:
+        logger.warning("trending failed: %s", e)
+        items = []
+    tracks = [normalize_song(s) for s in items if s.get("id") and s.get("type", "song") == "song"]
     return {"tracks": tracks[:limit]}
 
 
 @api_router.get("/tracks/search")
 async def search(q: str = Query(..., min_length=1),
                  limit: int = Query(25, ge=1, le=50)):
-    data = await audius_get("/tracks/search", {"query": q, "limit": limit})
-    tracks = [normalize_track(t) for t in data if t.get("id") and not t.get("is_delete")]
+    data = await js_get({"__call": "search.getResults", "q": q, "n": limit, "p": "1"})
+    items = data.get("results", []) if isinstance(data, dict) else []
+    tracks = [normalize_song(s) for s in items if s.get("id")]
     return {"tracks": tracks[:limit]}
 
 
-@api_router.get("/artists/{handle}")
-async def artist(handle: str):
-    user = await audius_get(f"/users/handle/{handle}", {})
-    if not user or not isinstance(user, dict):
+@api_router.get("/artists/{artist_id}")
+async def artist(artist_id: str):
+    data = await js_get({"__call": "artist.getArtistPageDetails", "artistId": artist_id})
+    if not isinstance(data, dict) or not data.get("name"):
         raise HTTPException(status_code=404, detail="Artist not found")
-    uid = user.get("id")
-    tracks_data = await audius_get(f"/users/{uid}/tracks", {"limit": 30, "sort": "plays"})
-    tracks = [
-        normalize_track(t)
-        for t in (tracks_data or [])
-        if t.get("id") and not t.get("is_delete")
-    ]
-    return {"artist": normalize_user(user), "tracks": tracks}
+    top = data.get("topSongs")
+    if isinstance(top, dict):
+        songs = top.get("songs") or top.get("data") or []
+    elif isinstance(top, list):
+        songs = top
+    else:
+        songs = []
+    tracks = [normalize_song(s) for s in songs if s.get("id")]
+    artist_obj = {
+        "id": artist_id,
+        "name": _clean(data.get("name")),
+        "handle": artist_id,
+        "image": _img(data.get("image")),
+        "cover": _img(data.get("image")),
+        "bio": None,
+        "isVerified": bool(data.get("isVerified")),
+        "followerCount": int(data.get("follower_count") or 0),
+        "trackCount": len(tracks),
+        "genre": data.get("dominantLanguage"),
+    }
+    return {"artist": artist_obj, "tracks": tracks}
 
 
 @api_router.get("/tracks/{track_id}")
 async def track_detail(track_id: str):
-    data = await audius_get(f"/tracks/{track_id}", {})
-    if not data:
+    data = await js_get({"__call": "song.getDetails", "pids": track_id})
+    songs = _songs_from(data, track_id)
+    if not songs:
         raise HTTPException(status_code=404, detail="Track not found")
-    return {"track": normalize_track(data)}
+    return {"track": normalize_song(songs[0])}
 
 
 @api_router.get("/tracks/{track_id}/stream")
 async def stream_proxy(track_id: str, request: Request):
     http = await get_http()
-    hosts = await resolve_hosts()
-    range_header = request.headers.get("range")
+    data = await js_get({"__call": "song.getDetails", "pids": track_id})
+    songs = _songs_from(data, track_id)
+    if not songs:
+        raise HTTPException(status_code=404, detail="Track not found")
+    url = decrypt_url((songs[0].get("more_info") or {}).get("encrypted_media_url"))
+    if not url:
+        raise HTTPException(status_code=502, detail="Audio unavailable")
+
     upstream_headers = {}
-    if range_header:
-        upstream_headers["Range"] = range_header
+    if request.headers.get("range"):
+        upstream_headers["Range"] = request.headers["range"]
+    req = http.build_request("GET", url, headers=upstream_headers)
+    upstream = await http.send(req, stream=True)
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        raise HTTPException(status_code=502, detail="Audio unavailable")
 
-    for host in hosts:
-        url = f"{host}/v1/tracks/{track_id}/stream?app_name={APP_NAME}"
+    resp_headers = {"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=3600"}
+    for h in ("content-length", "content-range"):
+        if h in upstream.headers:
+            resp_headers[h.title()] = upstream.headers[h]
+
+    async def body():
         try:
-            req = http.build_request("GET", url, headers=upstream_headers)
-            upstream = await http.send(req, stream=True)
-            if upstream.status_code >= 400:
-                await upstream.aclose()
-                continue
+            async for chunk in upstream.aiter_bytes(65536):
+                yield chunk
+        finally:
+            await upstream.aclose()
 
-            resp_headers = {"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=3600"}
-            for h in ("content-length", "content-range"):
-                if h in upstream.headers:
-                    resp_headers[h.title()] = upstream.headers[h]
-
-            async def body():
-                try:
-                    async for chunk in upstream.aiter_bytes(65536):
-                        yield chunk
-                finally:
-                    await upstream.aclose()
-
-            return StreamingResponse(
-                body(),
-                status_code=upstream.status_code,
-                media_type=upstream.headers.get("content-type", "audio/mpeg"),
-                headers=resp_headers,
-            )
-        except Exception as e:
-            logger.warning("stream host %s failed: %s", host, e)
-            continue
-    raise HTTPException(status_code=502, detail="Audio unavailable")
+    return StreamingResponse(
+        body(),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "audio/mp4"),
+        headers=resp_headers,
+    )
 
 
 @api_router.get("/lyrics")
 async def lyrics(title: str, artist: str,
-                 album: str = "", duration: float = 0):
+                 album: str = "", duration: float = 0,
+                 track_id: Optional[str] = None):
     http = await get_http()
     headers = {"User-Agent": f"{APP_NAME}/1.0 (https://liquidaudio.app)"}
     params = {
@@ -222,18 +256,18 @@ async def lyrics(title: str, artist: str,
         r = await http.get(f"{LRCLIB_BASE}/api/get", params=params, headers=headers)
         if r.status_code == 200:
             j = r.json()
-            return {
-                "synced": j.get("syncedLyrics"),
-                "plain": j.get("plainLyrics"),
-                "instrumental": bool(j.get("instrumental")),
-            }
-        # fallback fuzzy search
+            if j.get("syncedLyrics") or j.get("plainLyrics"):
+                return {
+                    "synced": j.get("syncedLyrics"),
+                    "plain": j.get("plainLyrics"),
+                    "instrumental": bool(j.get("instrumental")),
+                }
         r2 = await http.get(f"{LRCLIB_BASE}/api/search",
                             params={"track_name": title, "artist_name": artist},
                             headers=headers)
         if r2.status_code == 200:
             arr = r2.json()
-            if arr:
+            if arr and (arr[0].get("syncedLyrics") or arr[0].get("plainLyrics")):
                 best = arr[0]
                 return {
                     "synced": best.get("syncedLyrics"),
@@ -242,6 +276,18 @@ async def lyrics(title: str, artist: str,
                 }
     except Exception as e:
         logger.warning("lyrics error: %s", e)
+
+    # JioSaavn plain-lyrics fallback (great for Hindi / Bollywood)
+    if track_id:
+        try:
+            data = await js_get({"__call": "lyrics.getLyrics", "lyrics_id": track_id})
+            raw = (data or {}).get("lyrics")
+            if raw:
+                plain = html_lib.unescape(raw.replace("<br>", "\n").replace("<br/>", "\n"))
+                return {"synced": None, "plain": plain, "instrumental": False}
+        except Exception as e:
+            logger.warning("saavn lyrics error: %s", e)
+
     return {"synced": None, "plain": None, "instrumental": False}
 
 

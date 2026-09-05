@@ -15,6 +15,7 @@ import {
 } from "react";
 
 import { addRecent, streamUrl, type Track } from "@/src/lib/api";
+import { useDownloads } from "@/src/components/downloads-context";
 import { getDeviceId } from "@/src/lib/device";
 import { haptic } from "@/src/lib/haptics";
 import { queryClient } from "@/src/query-client";
@@ -36,6 +37,7 @@ type AudioContextValue = {
   toggle: () => void;
   next: () => void;
   prev: () => void;
+  jumpTo: (index: number) => void;
   seek: (seconds: number) => void;
   cycleRepeat: () => void;
   toggleShuffle: () => void;
@@ -52,6 +54,7 @@ export function useAudio(): AudioContextValue {
 export function AudioProvider({ children }: { children: ReactNode }) {
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
+  const { getLocalUri } = useDownloads();
 
   const [queue, setQueue] = useState<Track[]>([]);
   const [index, setIndex] = useState(0);
@@ -78,7 +81,8 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     if (loadedIdRef.current === current.id) return;
     loadedIdRef.current = current.id;
     try {
-      player.replace({ uri: current.previewUrl || streamUrl(current.id) });
+      const local = getLocalUri(current.id);
+      player.replace({ uri: local || current.previewUrl || streamUrl(current.id) });
       player.play();
     } catch {
       // ignore transient replace errors
@@ -87,7 +91,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       .then((id) => addRecent(id, current))
       .then(() => queryClient.invalidateQueries({ queryKey: ["library"] }))
       .catch(() => {});
-  }, [current, player]);
+  }, [current, player, getLocalUri]);
 
   const advance = useCallback(
     (dir: 1 | -1, auto = false) => {
@@ -153,6 +157,16 @@ export function AudioProvider({ children }: { children: ReactNode }) {
 
   const next = useCallback(() => advance(1), [advance]);
 
+  const jumpTo = useCallback(
+    (i: number) => {
+      if (i >= 0 && i < queue.length) {
+        haptic.light();
+        setIndex(i);
+      }
+    },
+    [queue.length],
+  );
+
   const prev = useCallback(() => {
     if ((status.currentTime ?? 0) > 3) {
       player.seekTo(0);
@@ -194,6 +208,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       toggle,
       next,
       prev,
+      jumpTo,
       seek,
       cycleRepeat,
       toggleShuffle,
@@ -212,6 +227,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       toggle,
       next,
       prev,
+      jumpTo,
       seek,
       cycleRepeat,
       toggleShuffle,

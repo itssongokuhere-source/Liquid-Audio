@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAudio } from "@/src/components/audio-context";
 import { ArtworkBackdrop } from "@/src/components/artwork-backdrop";
+import { useDownloads } from "@/src/components/downloads-context";
 import { Icon } from "@/src/components/icon";
 import { useToast } from "@/src/components/toast";
 import { useTrackActions } from "@/src/components/track-actions";
@@ -49,6 +50,7 @@ export default function PlayerScreen() {
   } = useAudio();
 
   const { data: library, deviceId } = useLibrary();
+  const { isDownloaded, isDownloading, downloadTrack } = useDownloads();
   const isFav = !!(current && library?.favorites?.some((f) => f.id === current.id));
   const favMutation = useMutation({
     mutationFn: () => toggleFavorite(deviceId as string, current!),
@@ -160,8 +162,27 @@ export default function PlayerScreen() {
 
         <View style={styles.bottomActions}>
           <Pressable testID="player-lyrics-btn" onPress={() => router.push("/lyrics")} style={styles.bottomBtn}>
-            <Icon name="mic-outline" size={20} color={WHITE} />
+            <Icon name="mic-outline" size={22} color={WHITE} />
             <Text style={styles.bottomBtnText}>Lyrics</Text>
+          </Pressable>
+          <Pressable testID="player-queue-btn" onPress={() => router.push("/queue")} style={styles.bottomBtn}>
+            <Icon name="list" size={22} color={WHITE} />
+            <Text style={styles.bottomBtnText}>Queue</Text>
+          </Pressable>
+          <Pressable
+            testID="player-download-btn"
+            onPress={() => downloadTrack(current)}
+            disabled={isDownloaded(current.id) || isDownloading(current.id)}
+            style={styles.bottomBtn}
+          >
+            <Icon
+              name={isDownloaded(current.id) ? "checkmark-circle" : isDownloading(current.id) ? "cloud-download" : "download-outline"}
+              size={22}
+              color={isDownloaded(current.id) ? colors.brandPrimary : WHITE}
+            />
+            <Text style={styles.bottomBtnText}>
+              {isDownloaded(current.id) ? "Saved" : isDownloading(current.id) ? "…" : "Save"}
+            </Text>
           </Pressable>
           <Pressable
             testID="player-eq-btn"
@@ -171,8 +192,8 @@ export default function PlayerScreen() {
             }}
             style={styles.bottomBtn}
           >
-            <Icon name="options" size={20} color={WHITE} />
-            <Text style={styles.bottomBtnText}>Equalizer</Text>
+            <Icon name="options" size={22} color={WHITE} />
+            <Text style={styles.bottomBtnText}>EQ</Text>
           </Pressable>
         </View>
       </View>
@@ -323,15 +344,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   repeatBadgeText: { color: "#FFF", fontSize: 9, fontWeight: "800" },
-  bottomActions: { flexDirection: "row", justifyContent: "center", gap: 14 },
+  bottomActions: { flexDirection: "row", justifyContent: "center", gap: 10 },
   bottomBtn: {
-    flexDirection: "row",
+    flex: 1,
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 22,
+    justifyContent: "center",
+    gap: 5,
     paddingVertical: 12,
-    borderRadius: 999,
+    borderRadius: 16,
     backgroundColor: "rgba(255,255,255,0.15)",
   },
-  bottomBtnText: { color: WHITE, fontSize: 14, fontWeight: "700" },
+  bottomBtnText: { color: WHITE, fontSize: 12, fontWeight: "700" },
 });

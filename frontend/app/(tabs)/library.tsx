@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAudio } from "@/src/components/audio-context";
+import { useDownloads } from "@/src/components/downloads-context";
 import { Icon, type IconName } from "@/src/components/icon";
 import { TrackRow } from "@/src/components/track-row";
 import { useTrackActions } from "@/src/components/track-actions";
@@ -20,8 +21,8 @@ import {
 } from "@/src/theme";
 
 const SCHEME_KEY = "liquidaudio.scheme";
-type Tab = "Favorites" | "Recent" | "Playlists";
-const TABS: Tab[] = ["Favorites", "Recent", "Playlists"];
+type Tab = "Favorites" | "Recent" | "Downloads" | "Playlists";
+const TABS: Tab[] = ["Favorites", "Recent", "Downloads", "Playlists"];
 
 const THEME_OPTIONS: { key: string; label: string; icon: IconName; scheme: ColorScheme | null }[] = [
   { key: "system", label: "Auto", icon: "phone-portrait-outline", scheme: null },
@@ -36,6 +37,7 @@ export default function LibraryScreen() {
   const { playNow, current, hasTrack } = useAudio();
   const openActions = useTrackActions();
   const { data: library } = useLibrary();
+  const { downloads } = useDownloads();
   const router = useRouter();
 
   const [tab, setTab] = useState<Tab>("Favorites");
@@ -51,7 +53,8 @@ export default function LibraryScreen() {
     storage.setItem(SCHEME_KEY, opt.key);
   };
 
-  const activeList = tab === "Favorites" ? favorites : recent;
+  const activeList =
+    tab === "Favorites" ? favorites : tab === "Downloads" ? downloads : recent;
 
   return (
     <View style={styles.container} testID="library-screen">
@@ -148,9 +151,27 @@ export default function LibraryScreen() {
         )
       ) : activeList.length === 0 ? (
         <EmptyState
-          icon={tab === "Favorites" ? "heart-outline" : "time-outline"}
-          text={tab === "Favorites" ? "No favorites yet" : "Nothing played yet"}
-          hint={tab === "Favorites" ? "Tap the heart on a track" : "Your history appears here"}
+          icon={
+            tab === "Favorites"
+              ? "heart-outline"
+              : tab === "Downloads"
+                ? "download-outline"
+                : "time-outline"
+          }
+          text={
+            tab === "Favorites"
+              ? "No favorites yet"
+              : tab === "Downloads"
+                ? "No downloads yet"
+                : "Nothing played yet"
+          }
+          hint={
+            tab === "Favorites"
+              ? "Tap the heart on a track"
+              : tab === "Downloads"
+                ? "Tap ••• → Download to save songs offline"
+                : "Your history appears here"
+          }
         />
       ) : (
         <FlatList
