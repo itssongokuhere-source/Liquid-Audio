@@ -235,3 +235,9 @@ frontend:
   - task: "LyricsView: smooth interpolated clock + 0.45s lookahead"
     implemented: true
     needs_retesting: true
+
+## Iteration 9 — Home refresh (main agent)
+frontend:
+  - task: "Home refresh: header button home-refresh (spins while refreshing) + pull-to-refresh RefreshControl; LiquidRefresh pill (testID liquid-refresh) while rebuilding; refetches trending, rebuilds mixes (refresh=true), invalidates library, reshuffles feed (featured/trending order changes)"
+    implemented: true
+    needs_retesting: true

@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -23,6 +24,11 @@ import { fetchTrending, type Track } from "@/src/lib/api";
 import { contentBottomPad } from "@/src/lib/layout";
 import { useLibrary, useMixes } from "@/src/lib/hooks";
 import { MixCard } from "@/src/components/mix-card";
+import { LiquidRefresh } from "@/src/components/liquid-refresh";
+import { fetchMixes } from "@/src/lib/api";
+import { haptic } from "@/src/lib/haptics";
+import { queryClient } from "@/src/query-client";
+import Animated, { Easing, LinearTransition, useAnimatedStyle, useSharedValue, withRepeat, withTiming, cancelAnimation } from "react-native-reanimated";
 import { makeStyles, useTheme } from "@/src/theme";
 
 const GENRES = [
@@ -59,13 +65,52 @@ export default function HomeScreen() {
     queryKey: ["trending", genre],
     queryFn: () => fetchTrending(genre),
   });
-  const { data: library } = useLibrary();
+  const { data: library, deviceId } = useLibrary();
   const { data: mixes = [] } = useMixes();
   const recent = library?.recent ?? [];
 
-  const hero = tracks[0];
-  const trendingRow = tracks.slice(1, 12);
-  const listTracks = tracks.slice(1);
+  // Pull-to-refresh (YouTube-Music style): rebuild mixes, refetch trending and reshuffle the feed.
+  const [refreshing, setRefreshing] = useState(false);
+  const [feedSeed, setFeedSeed] = useState(0);
+  const spin = useSharedValue(0);
+  const spinStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value}deg` }] }));
+  const onRefresh = useCallback(async () => {
+    if (refreshing) return;
+    haptic.medium();
+    setRefreshing(true);
+    spin.value = withRepeat(withTiming(360, { duration: 900, easing: Easing.linear }), -1, false);
+    try {
+      await Promise.all([
+        refetch(),
+        queryClient.invalidateQueries({ queryKey: ["library"] }),
+        deviceId
+          ? fetchMixes(deviceId, true).then((m) => queryClient.setQueryData(["mixes", deviceId], m))
+          : Promise.resolve(),
+      ]);
+      setFeedSeed((n) => n + 1);
+      haptic.success();
+    } finally {
+      cancelAnimation(spin);
+      spin.value = withTiming(0, { duration: 200 });
+      setRefreshing(false);
+    }
+  }, [refreshing, refetch, deviceId, spin]);
+
+  const shuffled = useMemo(() => {
+    if (!feedSeed) return tracks;
+    const arr = [...tracks];
+    let seed = feedSeed * 9301 + 49297;
+    for (let i = arr.length - 1; i > 0; i--) {
+      seed = (seed * 9301 + 49297) % 233280;
+      const j = Math.floor((seed / 233280) * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [tracks, feedSeed]);
+
+  const hero = shuffled[0];
+  const trendingRow = shuffled.slice(1, 12);
+  const listTracks = shuffled.slice(1);
 
   const StickyHeader = (
     <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
@@ -81,6 +126,11 @@ export default function HomeScreen() {
             style={styles.iconBtn}
           >
             <Icon name="search" size={22} color={colors.onSurface} />
+          </Pressable>
+          <Pressable testID="home-refresh" onPress={onRefresh} style={styles.iconBtn}>
+            <Animated.View style={spinStyle}>
+              <Icon name="refresh" size={22} color={refreshing ? colors.brandPrimary : colors.onSurface} />
+            </Animated.View>
           </Pressable>
           <Pressable
             testID="home-settings"
@@ -146,8 +196,20 @@ export default function HomeScreen() {
         stickyHeaderIndices={[0]}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: contentBottomPad(hasTrack) }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brandPrimary}
+            colors={[colors.brandPrimary]}
+            progressBackgroundColor={colors.surfaceSecondary}
+            progressViewOffset={insets.top + 60}
+          />
+        }
       >
         {StickyHeader}
+        <LiquidRefresh visible={refreshing} label="Refreshing your feed…" />
+        <Animated.View layout={LinearTransition.springify().damping(20)} key={`feed-${feedSeed}`}>
 
         {hero ? (
           <Pressable
@@ -229,6 +291,7 @@ export default function HomeScreen() {
           </>
         ) : null}
 
+        </Animated.View>
         <SectionTitle text="More to explore" />
         <View style={styles.listWrap}>
           {listTracks.map((item) => (

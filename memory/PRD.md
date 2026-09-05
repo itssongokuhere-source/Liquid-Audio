@@ -106,6 +106,9 @@ auto updates like big-company apps (delivered via Publish → build flow).
   needs a native module (user chose to skip for now).
 - Global mini‑player in root layout; perf: `useAudioProgress` split, query staleTime.
 
+- **Home refresh** (iteration 9): header refresh button + pull‑to‑refresh; `LiquidRefresh` pill; rebuilds
+  mixes (`refresh=true`), refetches trending, reshuffles the feed.
+
 ## How to ship an update to users
 1. Publish → build the new APK on Emergent, upload it to KiwiFile (or any direct link host).
 2. In the app: Settings → About → tap the version row 5× → fill version, APK link, notes, PIN → Publish.
