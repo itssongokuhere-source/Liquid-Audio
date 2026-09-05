@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 14 verified GREEN. BACKEND (pytest /app/backend/tests/test_iteration14.py — 7/7 PASS in 3.97s): (1) Blinding Lights/test1 cached rich lyrics — source==musixmatch, rich list len=30 with 30 lines each having numeric start<=end, non-empty text, and words[] whose t is monotonically non-decreasing and t>=start-0.05; synced LRC present. (2) Cached second call <0.5s. (3) 5 Hindi trending tracks: all 200, all include keys synced/plain/instrumental/source/rich; rich (when non-null) passes structural validation and contains no Devanagari word text; every second call served from cache <0.5s. (4) Regression /api/tracks/trending (+genre=hindi), /api/search?q=arijit, /api/tracks/{id}/recommendations all 200. FIX APPLIED: The `_lrclib_lookup` and `jiosaavn` fallback return paths in server.py were missing the `rich` key from the response shape (only added when reading from cache). Added explicit `\"rich\": None` to all 4 fallback return statements so uncached first-calls also return the required 5 keys. Restarted backend. FRONTEND (web 390x844): Session-clean run: Search 'Aaj Bhi 2 Vishal Mishra' → track-row-JBrx_OoJ (found second in results) → mini-player shows 'Aaj Bhi 2 · Vishal Mishra' → tap mini-player → tap player-tab-lyrics → lyrics-view renders 30 romanised lines AND BOTH pills visible: testID lyrics-wordsync 'Word‑synced' ✓ (mic icon) and testID lyrics-sync 'Sync 0.0 s' ✓. /api/lyrics network response for that track: source=musixmatch, rich_len=30. RESUME PLAYBACK: after playNow-writing session (13513 bytes with queue_len=23, index=1, current=JBrx_OoJ, position=0), full page.goto reload restored mini-player within 2s with same track title, player screen shows 'Aaj Bhi 2 / Vishal Mishra' with big play button (paused, position 0:00) ✓; localStorage 'liquidaudio.session' round-trips identical size. CONSOLE: zero 'props.pointerEvents is deprecated' or 'textShadow* … deprecated' warnings across Home → search → player → lyrics → up-next → EQ. REGRESSION: player-tab-upnext + player-tab-related + EQ button all render. NOTE for main agent: clicking track-row-JBrx_OoJ via Playwright's built-in click() often mis-routes to the top search result (autoplay path on web preview autoloads recommendations and the audio decode error auto-advances) — using `element.evaluate('el => el.click()')` bypasses this and correctly fires onPress with JBrx_OoJ. This is a Playwright/web quirk, not an app bug.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/lyrics", "issue": "Fallback return paths in _lrclib_lookup and jiosaavn (server.py lines 741, 762, 774, 779, 781) were missing `rich` key; cached responses always had it because the read-back explicitly whitelists 5 keys. FIXED in this run by adding `\"rich\": None` to all 4 fallback returns."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14.py",
+    "/app/test_reports/pytest/iteration14.xml",
+    "/app/test_reports/iteration_14.json"
+  ],
+  "action_items": [
+    "None required — all iteration-14 items pass. Backend response-shape fix already applied and verified.",
+    "Optional: consider whether an on-web preview should suppress auto-advance when player load fails (decode error). Currently didJustFinish still fires on decode failure and the queue advances into recommendations, which can be surprising when navigating on web. Native builds are unaffected."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py `/lyrics`: cache-read path (line 671) whitelists 5 keys including `rich`; the lookup path used to omit `rich` in 4 fallback returns causing non-deterministic response shape. Fixed by making every return path explicit — recommend enforcing this via a Pydantic response_model to prevent regressions.",
+    "backend/mxm.py `_parse_richsync`: correctly guards len(lines) < 4 (returns None), guards timing against wrong-duration edits (last line.start > duration+3 → None), and words carry `t = round(ts + o, 3)` producing monotonic per-line word times as validated by tests.",
+    "audio-context.tsx `restoreRef`/session persistence: works end-to-end (verified via 2 reload cycles, identical 13513-byte payload). SESSION_KEY writes are debounced by 5s position throttle and by queue/index/repeat/shuffle dependency array. Good.",
+    "lyrics-view.tsx wordsync pill guard (`approximate ? approx : wordSynced ? wordsync : null`) is correct — pill renders when `data.rich?.length` is truthy AND `data.synced` is truthy (approximate=false)."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (added `\"rich\": None` to 4 lrclib/jiosaavn fallback return statements)",
+    "/app/backend/tests/test_iteration14.py (new)",
+    "/app/test_reports/pytest/iteration14.xml (pytest junit output)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all 5 acceptance items + regression pass)"},
+  "seed_data_creation": "None. `liquidaudio.autoplay=false` set temporarily in localStorage during tests to isolate queue behavior on web preview; cleared between runs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: EXPO_PUBLIC_BACKEND_URL=https://rhythm-glass-ui.preview.emergentagent.com. Iteration 14 tests at /app/backend/tests/test_iteration14.py cover Blinding Lights rich + 5 Hindi tracks shape + cache latency + regression. When testing frontend track-row clicks on web preview, use `await element.evaluate('el => el.click()')` (JS click) instead of `page.click(force=True)` because coordinate-based clicks can hit adjacent virtualized rows and playNow gets called with the wrong track; JS click always dispatches to the right listener. Session key is 'liquidaudio.session' (double-JSON-stringified — first by storage wrapper, then read by JSON.parse in audio-context.tsx:128 which unwraps once). Musixmatch upstream is throttled 1/4s and captcha-pauses 10min after bursts — tests must run sequentially and honor Mongo cache to stay fast (verified <0.5s on cached second call).",
+  "rca_of_issue": "Root cause of the shape-inconsistency (missing `rich` key on uncached first call): server.py `_lyrics` endpoint stores lookup dict as-is to Mongo (`lyrics_cache`) but only re-projects to the 5-key shape on cache reads. `_lyrics_lookup` fell through to `_lrclib_lookup`/jiosaavn returns which omitted `rich`, so the first response for any track that missed both cache and Musixmatch RichSync lacked the key. Mitigation: added `\"rich\": None` to all 4 fallback return paths. Long-term: declare a Pydantic `LyricsResponse` model with `rich: Optional[List[dict]] = None` and set it as `response_model` on the route to guarantee shape."
+}

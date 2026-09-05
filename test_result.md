@@ -266,3 +266,29 @@ backend:
   - task: "GET /api/search/suggest: artists only when typed text is part of the artist name (max 2, first), then songs (exact title first, variants last), then 2 albums"
     implemented: true
     needs_retesting: true
+
+## Iteration 13 — Lyrics sync accuracy (main agent)
+frontend:
+  - task: "expo-audio status updateInterval 100ms; lyrics Sync nudge pill (lyrics-sync, lyrics-sync-minus/plus, ±0.5s, persisted per track) applied to both line clock and karaoke frame clock"
+    implemented: true
+    needs_retesting: true
+backend:
+  - task: "/api/lyrics: synced candidates must be within ±3s of track duration (was 12s) to avoid drift from other edits"
+    implemented: true
+    needs_retesting: true
+
+## Iteration 14 — Word-level lyrics (Musixmatch RichSync) + resume playback + deprecation cleanup (main agent)
+backend:
+  - task: "/api/lyrics: new step 0 Musixmatch RichSync (backend/mxm.py) → response gains `rich: [{start,end,text,words:[{t,text}]}]` (word onsets) with source='musixmatch'; falls back to Musixmatch line subtitles, then LRCLIB. Results cached in Mongo `lyrics_cache` (rich forever, others 7d, 20min when Musixmatch was rate-limited). Musixmatch throttled 4s/call and pauses 10min on captcha — tests must tolerate rich=null and still get 200 + synced/plain."
+    implemented: true
+    needs_retesting: true
+frontend:
+  - task: "LyricsView: uses data.rich for true per-word karaoke timing (pill testID lyrics-wordsync 'Word‑synced'), lookahead 0.12s for rich vs 0.45s estimated; Sync nudge kept"
+    implemented: true
+    needs_retesting: true
+  - task: "AudioProvider persists session (queue window, index, position, repeat, shuffle) to AsyncStorage key liquidaudio.session; on cold start restores queue paused at saved position (mini-player visible without pressing play); does not bump recent/plays on restore"
+    implemented: true
+    needs_retesting: true
+  - task: "Deprecation cleanup: pointerEvents prop → style.pointerEvents (player, mini-player, toast, liquid-refresh, equalizer); lyrics glow uses textShadow string on web, textShadow* on native"
+    implemented: true
+    needs_retesting: true

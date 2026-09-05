@@ -20,7 +20,14 @@ export type Track = {
 
 export type Playlist = { id: string; name: string; tracks: Track[] };
 export type Library = { favorites: Track[]; recent: Track[]; playlists: Playlist[] };
-export type Lyrics = { synced: string | null; plain: string | null; instrumental: boolean; source?: string | null };
+export type RichLine = { start: number; end: number; text: string; words: { t: number; text: string }[] };
+export type Lyrics = {
+  synced: string | null;
+  plain: string | null;
+  instrumental: boolean;
+  source?: string | null;
+  rich?: RichLine[] | null;
+};
 
 export type JamMember = { device: string; name: string; host: boolean };
 export type JamState = {

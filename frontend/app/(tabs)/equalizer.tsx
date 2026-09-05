@@ -177,7 +177,7 @@ export default function EqualizerScreen() {
         })}
       </ScrollView>
 
-      <View style={[styles.eqCard, { opacity: dim }]} pointerEvents={enabled ? "auto" : "none"}>
+      <View style={[styles.eqCard, { opacity: dim, pointerEvents: enabled ? "auto" : "none" }]}>
         <View style={styles.faders}>
           {BANDS.map((label, i) => (
             <View key={label} style={styles.band}>

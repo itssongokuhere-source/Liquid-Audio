@@ -30,7 +30,7 @@ export function MiniPlayer({ bottomOffset }: { bottomOffset: number }) {
     });
 
   return (
-    <View style={[styles.wrap, { bottom: bottomOffset + 8 }]} pointerEvents="box-none">
+    <View style={[styles.wrap, { bottom: bottomOffset + 8, pointerEvents: "box-none" }]}>
       <GestureDetector gesture={swipeUp}>
       <Pressable
         testID="mini-player"

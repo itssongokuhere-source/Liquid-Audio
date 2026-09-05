@@ -37,6 +37,8 @@ import { storage } from "@/src/utils/storage";
 export type RepeatMode = "off" | "all" | "one";
 
 const AUTOPLAY_KEY = "liquidaudio.autoplay";
+const SESSION_KEY = "liquidaudio.session";
+type Session = { queue: Track[]; index: number; position: number; repeat: RepeatMode; shuffle: boolean };
 
 type AudioContextValue = {
   current: Track | null;
@@ -86,7 +88,7 @@ export function useAudio(): AudioContextValue {
 }
 
 export function AudioProvider({ children }: { children: ReactNode }) {
-  const player = useAudioPlayer(null);
+  const player = useAudioPlayer(null, { updateInterval: 100 });
   const status = useAudioPlayerStatus(player);
   const { getLocalUri } = useDownloads();
   const { settings } = useSettings();
@@ -114,9 +116,59 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   queueRef.current = queue;
   indexRef.current = index;
 
+  // Resume where you left off: the queue + song + position survive app restarts (loaded paused).
+  const restoreRef = useRef<{ position: number } | null>(null);
+  const pendingSeekRef = useRef<number | null>(null);
+  const [restored, setRestored] = useState(false);
   useEffect(() => {
     storage.getItem<boolean>(AUTOPLAY_KEY, true).then((v) => setAutoplay(v !== false));
+    storage
+      .getItem<string>(SESSION_KEY, "")
+      .then((raw) => {
+        const s = raw ? (JSON.parse(raw) as Session) : null;
+        if (s && Array.isArray(s.queue) && s.queue.length && !queueRef.current.length) {
+          restoreRef.current = { position: Number(s.position) || 0 };
+          setQueue(s.queue);
+          setIndex(Math.min(Math.max(0, s.index || 0), s.queue.length - 1));
+          if (s.repeat) setRepeat(s.repeat);
+          setShuffle(!!s.shuffle);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRestored(true));
   }, []);
+  useEffect(() => {
+    if (!restored) return;
+    if (!queue.length) {
+      storage.removeItem(SESSION_KEY).catch(() => {});
+      return;
+    }
+    const from = Math.max(0, index - 20);
+    const session: Session = {
+      queue: queue.slice(from, index + 40),
+      index: index - from,
+      position: player.currentTime ?? 0,
+      repeat,
+      shuffle,
+    };
+    storage.setItem(SESSION_KEY, JSON.stringify(session)).catch(() => {});
+  }, [restored, queue, index, repeat, shuffle, player]);
+  const lastPosSaveRef = useRef(0);
+  useEffect(() => {
+    const pos = status.currentTime ?? 0;
+    if (!restored || !current || Math.abs(pos - lastPosSaveRef.current) < 5) return;
+    lastPosSaveRef.current = pos;
+    storage
+      .getItem<string>(SESSION_KEY, "")
+      .then((raw) => (raw ? storage.setItem(SESSION_KEY, JSON.stringify({ ...(JSON.parse(raw) as Session), position: pos })) : undefined))
+      .catch(() => {});
+  }, [status.currentTime, restored, current]);
+  useEffect(() => {
+    if (pendingSeekRef.current == null || !status.isLoaded || !(status.duration > 0)) return;
+    const pos = pendingSeekRef.current;
+    pendingSeekRef.current = null;
+    if (pos > 1 && pos < status.duration - 5) player.seekTo(pos);
+  }, [status.isLoaded, status.duration, player]);
 
   // "Related" / autoplay suggestions are seeded from the song that is playing and stay stable
   // until the song changes (no reshuffling while you browse the queue).
@@ -173,10 +225,16 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         }
       }
       if (cancelled) return;
+      const restoring = restoreRef.current;
+      restoreRef.current = null;
       try {
-        player.volume = crossfade > 0 ? 0 : 1;
+        player.volume = crossfade > 0 && !restoring ? 0 : 1;
         player.replace({ uri: local || playbackUrl(current, quality) });
-        player.play();
+        if (restoring) {
+          pendingSeekRef.current = restoring.position;
+        } else {
+          player.play();
+        }
         // System "Now Playing" (lock screen, notification, Dynamic Island / media islands)
         if (Platform.OS !== "web") {
           try {
@@ -194,7 +252,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
             // older runtimes without lock-screen support
           }
         }
-        if (crossfade > 0) {
+        if (crossfade > 0 && !restoring) {
           // Fade-in over ~700ms
           const steps = 14;
           for (let i = 1; i <= steps; i++) {
@@ -207,11 +265,14 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         // ignore transient replace errors
       }
     };
+    const wasRestore = !!restoreRef.current;
     load();
-    getDeviceId()
-      .then((id) => addRecent(id, current))
-      .then(() => queryClient.invalidateQueries({ queryKey: ["library"] }))
-      .catch(() => {});
+    if (!wasRestore) {
+      getDeviceId()
+        .then((id) => addRecent(id, current))
+        .then(() => queryClient.invalidateQueries({ queryKey: ["library"] }))
+        .catch(() => {});
+    }
     return () => {
       cancelled = true;
     };

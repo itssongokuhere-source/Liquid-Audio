@@ -635,22 +635,49 @@ def _pick_lrc(candidates: List[dict], duration: float, want_synced: bool) -> Opt
             continue
         d = float(c.get("duration") or 0)
         diff = abs(d - duration) if duration and d else 6
-        if duration and d and diff > 12:
+        # Synced lyrics from a different edit of the song drift badly — be strict on duration.
+        if duration and d and diff > (3 if want_synced else 12):
             continue
-        score = -diff + (5 if c.get("syncedLyrics") else 0) + (3 if _is_latin(c.get("syncedLyrics") or c.get("plainLyrics")) else 0)
+        score = -diff * 2 + (5 if c.get("syncedLyrics") else 0) + (3 if _is_latin(c.get("syncedLyrics") or c.get("plainLyrics")) else 0)
         if score > best_score:
             best, best_score = c, score
     return best
+
+
+from mxm import Musixmatch, MxmBlocked
+
+musixmatch = Musixmatch(db.kv)
+LYRICS_CACHE_TTL = 7 * 24 * 3600
+LYRICS_RETRY_TTL = 20 * 60
+
+
+def _romanize_rich(rich: List[dict]) -> List[dict]:
+    out = []
+    for line in rich:
+        out.append({**line, "text": romanize(line["text"]),
+                    "words": [{**w, "text": romanize(w["text"])} for w in line["words"]]})
+    return out
 
 
 @api_router.get("/lyrics")
 async def lyrics(title: str, artist: str,
                  album: str = "", duration: float = 0,
                  track_id: Optional[str] = None, script: str = "latin"):
-    res = await _lyrics_lookup(title, artist, album, duration, track_id)
+    cache_key = track_id or f"{title}|{artist}|{round(duration)}"
+    cached = await db.lyrics_cache.find_one({"_id": cache_key})
+    now = _time.time()
+    ttl = LYRICS_CACHE_TTL if cached and not cached.get("partial") else LYRICS_RETRY_TTL
+    if cached and (cached.get("rich") or now - cached.get("at", 0) < ttl):
+        res = {k: cached.get(k) for k in ("synced", "plain", "instrumental", "source", "rich")}
+    else:
+        res = await _lyrics_lookup(title, artist, album, duration, track_id)
+        partial = res.pop("partial", False)
+        await db.lyrics_cache.update_one({"_id": cache_key}, {"$set": {**res, "at": now, "partial": partial}}, upsert=True)
     if script == "latin":
         res["synced"] = romanize(res.get("synced")) if res.get("synced") else res.get("synced")
         res["plain"] = romanize(res.get("plain")) if res.get("plain") else res.get("plain")
+        if res.get("rich"):
+            res["rich"] = _romanize_rich(res["rich"])
     return res
 
 
@@ -659,6 +686,31 @@ async def _lyrics_lookup(title: str, artist: str, album: str, duration: float, t
     headers = {"User-Agent": f"{APP_NAME}/1.0 (https://liquidaudio.app)"}
     simple = _simplify_title(title)
     first_artist = (artist or "").split(",")[0].strip()
+
+    # 0) Musixmatch — word-level RichSync (true karaoke timing), else its line-synced subtitles
+    mxm_synced: Optional[dict] = None
+    mxm_paused = False
+    try:
+        mx = await musixmatch.lookup(http, simple, first_artist, duration)
+        if mx and mx.get("rich"):
+            return {"synced": mx["synced"], "plain": mx["plain"], "instrumental": False,
+                    "source": "musixmatch", "rich": mx["rich"]}
+        if mx and mx.get("synced"):
+            mxm_synced = mx
+    except MxmBlocked:
+        logger.info("musixmatch paused (rate limit)")
+        mxm_paused = True
+    except Exception as e:
+        logger.warning("musixmatch error: %s", e)
+    if mxm_synced:
+        return {"synced": mxm_synced["synced"], "plain": mxm_synced["plain"], "instrumental": False,
+                "source": "musixmatch", "rich": None}
+    res = await _lrclib_lookup(http, headers, title, artist, album, duration, track_id, simple, first_artist)
+    res["partial"] = mxm_paused  # retry Musixmatch soon when it was rate-limited
+    return res
+
+
+async def _lrclib_lookup(http, headers, title, artist, album, duration, track_id, simple, first_artist) -> dict:
     plain_fallback: Optional[dict] = None
 
     async def lrc_get(params: dict) -> Optional[dict]:
@@ -687,7 +739,7 @@ async def _lyrics_lookup(title: str, artist: str, album: str, duration: float, t
                            "album_name": album or title, "duration": round(duration)})
     if exact and exact.get("syncedLyrics"):
         return {"synced": exact["syncedLyrics"], "plain": exact.get("plainLyrics"),
-                "instrumental": bool(exact.get("instrumental")), "source": "lrclib"}
+                "instrumental": bool(exact.get("instrumental")), "source": "lrclib", "rich": None}
     if exact:
         plain_fallback = exact
 
@@ -709,7 +761,7 @@ async def _lyrics_lookup(title: str, artist: str, album: str, duration: float, t
         best = _pick_lrc(arr, duration, want_synced=True)
         if best:
             return {"synced": best["syncedLyrics"], "plain": best.get("plainLyrics"),
-                    "instrumental": bool(best.get("instrumental")), "source": "lrclib"}
+                    "instrumental": bool(best.get("instrumental")), "source": "lrclib", "rich": None}
         if not plain_fallback:
             plain_fallback = _pick_lrc(arr, duration, want_synced=False)
 
@@ -720,14 +772,14 @@ async def _lyrics_lookup(title: str, artist: str, album: str, duration: float, t
             raw = (data or {}).get("lyrics")
             if raw:
                 plain = html_lib.unescape(raw.replace("<br>", "\n").replace("<br/>", "\n"))
-                return {"synced": None, "plain": plain, "instrumental": False, "source": "jiosaavn"}
+                return {"synced": None, "plain": plain, "instrumental": False, "source": "jiosaavn", "rich": None}
         except Exception as e:
             logger.warning("saavn lyrics error: %s", e)
 
     if plain_fallback:
         return {"synced": None, "plain": plain_fallback.get("plainLyrics"),
-                "instrumental": bool(plain_fallback.get("instrumental")), "source": "lrclib"}
-    return {"synced": None, "plain": None, "instrumental": False, "source": None}
+                "instrumental": bool(plain_fallback.get("instrumental")), "source": "lrclib", "rich": None}
+    return {"synced": None, "plain": None, "instrumental": False, "source": None, "rich": None}
 
 
 # ---------------------------------------------------------------------------

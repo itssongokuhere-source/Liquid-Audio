@@ -122,7 +122,7 @@ export function PullToRefresh({
   return (
     <GestureDetector gesture={pan}>
       <View style={{ flex: 1 }} collapsable={false}>
-        <Animated.View style={[styles.header, headerStyle]} pointerEvents="none" testID="liquid-refresh">
+        <Animated.View style={[styles.header, { pointerEvents: "none" }, headerStyle]} testID="liquid-refresh">
           <View style={styles.blobs}>
             <Blob color={colors.brandPrimary} index={0} active={active} pull={pull} />
             <Blob color={colors.brandSecondary} index={1} active={active} pull={pull} />

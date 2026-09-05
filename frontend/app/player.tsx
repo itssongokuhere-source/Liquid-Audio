@@ -257,12 +257,11 @@ export default function PlayerScreen() {
 
       </View>
 
-      <Animated.View pointerEvents={panel ? "auto" : "none"} style={[styles.scrim, scrimStyle]}>
+      <Animated.View style={[styles.scrim, { pointerEvents: panel ? "auto" : "none" }, scrimStyle]}>
         <Pressable style={{ flex: 1 }} onPress={() => setPanel(null)} testID="player-panel-scrim" />
       </Animated.View>
       <Animated.View
-        pointerEvents={panel ? "auto" : "none"}
-        style={[styles.panel, { top: insets.top + 56, bottom: BAR_H + Math.max(insets.bottom, 8) + 8 }, panelStyle]}
+        style={[styles.panel, { top: insets.top + 56, bottom: BAR_H + Math.max(insets.bottom, 8) + 8, pointerEvents: panel ? "auto" : "none" }, panelStyle]}
         testID="player-panel"
       >
         {panel ? <PlayerPanel tab={panel} onTabChange={setPanel} onClose={() => setPanel(null)} /> : null}

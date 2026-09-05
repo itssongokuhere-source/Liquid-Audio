@@ -74,8 +74,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {toast ? (
         <Animated.View
-          pointerEvents="none"
-          style={[styles.wrap, { top: insets.top + 8 }, animStyle]}
+          style={[styles.wrap, { top: insets.top + 8, pointerEvents: "none" }, animStyle]}
           testID="app-toast"
         >
           <Glass intensity={60} style={styles.glass}>

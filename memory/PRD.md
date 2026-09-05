@@ -114,6 +114,18 @@ auto updates like big-company apps (delivered via Publish → build flow).
   auto‑fills Up Next with related songs, search top‑artist only on close name match, artist‑aware suggestions,
   personal language chips (core 4 + languages the user actually played). Stable device id (shared promise).
 
+- **Iteration 13 (lyrics sync)**: expo-audio status every 100 ms; synced LRC candidates must be within ±3 s
+  of the stream duration; per‑song **Sync nudge** (−/+0.5 s, persisted `liquidaudio.lyricOffset.<id>`) applied
+  to line + karaoke clocks. `/lyrics` route is a URL‑only fallback (player uses the Lyrics panel).
+
+- **Iteration 14 (true word‑level karaoke)**: `backend/mxm.py` — Musixmatch RichSync (signed Android API,
+  no key) gives real per‑word onsets → `/api/lyrics` returns `rich[]`; falls back to Musixmatch line
+  subtitles, then LRCLIB, then JioSaavn plain. Cached in Mongo `lyrics_cache` (rich forever). Musixmatch is
+  throttled (4 s/call) and pauses 10 min on captcha (`kv.mxm_token` stores token + blocked_until).
+  Frontend shows a "Word‑synced" pill and sweeps words on real timings (0.12 s lookahead).
+  **Resume playback**: session (queue window, index, position, repeat, shuffle) persisted to
+  `liquidaudio.session`; restored paused on cold start. Deprecation warnings (pointerEvents, textShadow) cleared.
+
 ## How to ship an update to users
 1. Publish → build the new APK on Emergent, upload it to KiwiFile (or any direct link host).
 2. In the app: Settings → About → tap the version row 5× → fill version, APK link, notes, PIN → Publish.

@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 13 verified LARGELY GREEN. BACKEND (pytest /app/backend/tests/test_iteration13.py — 3/3 PASS in 22.9s): for 5 Hindi trending tracks (GET /api/tracks/trending?genre=hindi&limit=5), each GET /api/lyrics returned 200; for tracks that yielded synced lyrics the first LRC timestamp was ≤60s AND ≥10 timestamped lines; no Devanagari in any returned synced/plain text. A deliberately wrong duration=999 still returned 200 across all 5 tracks (never 500). FRONTEND (web 390x844): played first Hindi trending track from Home → mini-player → player → player-tab-lyrics → lyrics-view shows lines and 'Sync 0.0 s' pill (testID lyrics-sync). lyrics-sync-plus x2 → 'Sync +1.0 s' ✓; lyrics-sync-minus x3 → 'Sync -0.5 s' ✓. Closed panel (tap Lyrics tab again → panel closes) and reopened → 'Sync -0.5 s' persisted ✓. Played a second track → its Sync shows 'Sync 0.0 s' — per-track offset does not leak ✓. player-tab-upnext regression: panel opens & toggles closed. Search 'arij' returned 16 suggestions; Home reloads with 23 track rows. Only console output was expected React Native web deprecation warnings (props.pointerEvents / textShadow) and an 'audio decode' error which is expected (ignored per spec). ONE ISSUE: the standalone /lyrics route mounts lyrics-screen but useAudio().current is null on direct URL / SPA popstate navigation, so lyrics do not load and lyrics-sync pill is not rendered ('Lyrics not available'). No in-app UI link to /lyrics exists in the codebase, so a real user cannot reach it while playing.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "/lyrics standalone route",
+        "issue": "On direct URL visit or SPA popstate to /lyrics, LyricsScreen renders (testID=lyrics-screen mounts, header falls back to literal 'Lyrics'), but useAudio().current is null so useQuery(['lyrics', current?.id]) never fires and LyricsView shows 'Lyrics not available' — hence lyrics-sync pill is never rendered. No in-app link (Pressable/router.push('/lyrics')) exists anywhere in /app/frontend/app or /app/frontend/src, so the route is effectively unreachable while a track is playing.",
+        "affected_testIDs": ["lyrics-screen", "lyrics-view", "lyrics-sync"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native-web deprecation", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents' console warning during player modal render (harmless, expected per spec)."},
+      {"component": "react-native-web deprecation", "issue": "'textShadow* style props are deprecated. Use textShadow' warning emitted from lyrics-view render (harmless)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13.py",
+    "/app/test_reports/pytest/iteration13.xml",
+    "/app/test_reports/iteration_13.json"
+  ],
+  "action_items": [
+    "Optional: add an in-app link/button that calls router.push('/lyrics') (e.g. long-press or a small chevron on the embedded lyrics panel) so the standalone full-screen /lyrics route is reachable while playing — currently it is orphaned.",
+    "Optional: persist the current track (id + queue) in storage so a direct URL visit to /lyrics can restore playback context and render the sync pill; otherwise the /lyrics route only makes sense as a modal pushed from an in-app entry."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py _pick_lrc: strict ±3s window for synced candidates is correct and verified — 5/5 Hindi tracks either got in-window synced lyrics or fell back to plain/None without any 500.",
+    "lyrics-view.tsx renders the Sync pill only when lines.length>0 (line 192). This means on tracks with zero lyrics the pill is intentionally hidden — the /lyrics route observation above is a downstream effect of null `current`, not a bug in this guard.",
+    "audio-context.tsx queue is in-memory state only (no AsyncStorage rehydrate). Any full-page navigation resets `current` to null. Fine for tab routes but blocks direct /lyrics access."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (3/3)", "frontend": "83% (5/6 acceptance items — /lyrics standalone route unreachable)"},
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: EXPO_PUBLIC_BACKEND_URL=https://rhythm-glass-ui.preview.emergentagent.com. Iteration 13 tests at /app/backend/tests/test_iteration13.py exercise /api/lyrics for 5 Hindi trending tracks + wrong-duration probe. For the /lyrics route test: there is no in-app Link/Pressable that pushes '/lyrics', and full-page nav loses AudioProvider state (queue is in-memory). To test the pill on /lyrics you must either (a) add a temporary in-app link, or (b) verify by proxy — the /lyrics route wraps the same <LyricsView/> that is proven to work in the embedded player-tab-lyrics path. Toggling the same player-tab-lyrics twice closes and reopens the panel (no scrim click needed).",
+  "rca_of_issue": "Root cause of 'sync pill missing on /lyrics': app/lyrics.tsx renders <LyricsView/>, which requires useAudio().current to fire the fetchLyrics query (queryFn: () => fetchLyrics(current!), enabled: !!current). AudioProvider in _layout.tsx keeps queue in useState only. On a fresh browser hit to /lyrics (or a popstate-driven SPA nav from a route that never invoked playNow), queue===[] so current===null, the query is disabled, lines=[], and the pill guard `{lines.length ? ... }` (lyrics-view.tsx:192) yields no <lyrics-sync>. Mitigation options for E1: (1) add router.push('/lyrics') button in player screen; (2) persist current+queue+index to storage on change and rehydrate on AudioProvider mount."
+}
