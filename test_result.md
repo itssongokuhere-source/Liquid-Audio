@@ -292,3 +292,12 @@ frontend:
   - task: "Deprecation cleanup: pointerEvents prop → style.pointerEvents (player, mini-player, toast, liquid-refresh, equalizer); lyrics glow uses textShadow string on web, textShadow* on native"
     implemented: true
     needs_retesting: true
+
+## Iteration 15 — Android lock-screen next/prev + home-screen widget (main agent) — NATIVE BUILD ONLY
+frontend:
+  - task: "patch-package on expo-audio (patches/expo-audio+57.0.4.patch): media session exposes SEEK_TO_NEXT/PREVIOUS when showNextTrack/showPreviousTrack; emits `remoteCommand` {command:'next'|'previous'} to JS; AudioProvider listens and advances queue"
+    implemented: true
+    needs_retesting: false (web smoke passed; native untestable here)
+  - task: "react-native-android-widget NowPlaying widget (src/widget/*) with prev/toggle/next click actions via in-process bus; opens app when process dead; state persisted in liquidaudio.widgetState"
+    implemented: true
+    needs_retesting: false (native only)

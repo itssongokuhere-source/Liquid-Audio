@@ -1,0 +1,208 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
+index 86880d9..3a32e71 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
+@@ -110,7 +110,9 @@ enum class AndroidAudioEncoder(val value: String) : Enumerable {
+ class AudioLockScreenOptions(
+   @Field val showSeekForward: Boolean,
+   @Field val showSeekBackward: Boolean,
+-  @Field val isLiveStream: Boolean? = null
++  @Field val isLiveStream: Boolean? = null,
++  @Field val showNextTrack: Boolean? = null,
++  @Field val showPreviousTrack: Boolean? = null
+ ) : Record
+ 
+ enum class InterruptionMode(val value: String) : Enumerable {
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+index 196a5d5..b627fee 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+@@ -90,6 +90,8 @@ class AudioControlsService : MediaSessionService() {
+ 
+         ACTION_SEEK_FORWARD -> currentPlayerRef.seekTo(currentPlayerRef.currentPosition + SEEK_INTERVAL_MS)
+         ACTION_SEEK_BACKWARD -> currentPlayerRef.seekTo(currentPlayerRef.currentPosition - SEEK_INTERVAL_MS)
++        ACTION_NEXT -> currentPlayer?.let { emitRemoteCommand(it, REMOTE_NEXT) }
++        ACTION_PREVIOUS -> currentPlayer?.let { emitRemoteCommand(it, REMOTE_PREVIOUS) }
+       }
+     }
+ 
+@@ -192,6 +194,18 @@ class AudioControlsService : MediaSessionService() {
+       val compactViewIndices = mutableListOf<Int>()
+       var currentIndex = 0
+ 
++      if (currentOptions?.showPreviousTrack == true) {
++        builder.addAction(
++          NotificationCompat.Action(
++            androidx.media3.session.R.drawable.media3_icon_previous,
++            "Previous",
++            buildActionPendingIntent(ACTION_PREVIOUS)
++          )
++        )
++        compactViewIndices.add(currentIndex)
++        currentIndex++
++      }
++
+       if (currentOptions?.showSeekBackward == true) {
+         builder.addAction(
+           NotificationCompat.Action(
+@@ -227,9 +241,21 @@ class AudioControlsService : MediaSessionService() {
+           )
+         )
+         compactViewIndices.add(currentIndex)
++        currentIndex++
+       }
+ 
+-      style.setShowActionsInCompactView(*compactViewIndices.toIntArray())
++      if (currentOptions?.showNextTrack == true) {
++        builder.addAction(
++          NotificationCompat.Action(
++            androidx.media3.session.R.drawable.media3_icon_next,
++            "Next",
++            buildActionPendingIntent(ACTION_NEXT)
++          )
++        )
++        compactViewIndices.add(currentIndex)
++      }
++
++      style.setShowActionsInCompactView(*compactViewIndices.take(3).toIntArray())
+     }
+ 
+     builder.setStyle(style)
+@@ -322,16 +348,60 @@ class AudioControlsService : MediaSessionService() {
+ 
+   private fun resolveSessionPlayer(player: AudioPlayer, options: AudioLockScreenOptions?): Player {
+     val isLive = options?.isLiveStream ?: player.isLive
+-    if (!isLive) {
++    val showNext = options?.showNextTrack == true
++    val showPrevious = options?.showPreviousTrack == true
++    if (!isLive && !showNext && !showPrevious) {
+       return player.ref
+     }
+ 
++    // Next / previous are app-level queue actions: expose the commands to the system controls and
++    // forward presses to JS as a `remoteCommand` event instead of touching the single-item ExoPlayer.
+     return object : ForwardingPlayer(player.ref) {
+       override fun getAvailableCommands(): Player.Commands {
+-        return super.getAvailableCommands().buildUpon()
+-          .remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+-          .build()
++        val builder = super.getAvailableCommands().buildUpon()
++        if (isLive) {
++          builder.remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
++        }
++        if (showNext) {
++          builder.addAll(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
++        }
++        if (showPrevious) {
++          builder.addAll(Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
++        }
++        return builder.build()
++      }
++
++      override fun isCommandAvailable(command: Int): Boolean {
++        return availableCommands.contains(command)
++      }
++
++      override fun hasNextMediaItem(): Boolean = showNext || super.hasNextMediaItem()
++
++      override fun hasPreviousMediaItem(): Boolean = showPrevious || super.hasPreviousMediaItem()
++
++      override fun seekToNext() {
++        if (showNext) emitRemoteCommand(player, REMOTE_NEXT) else super.seekToNext()
++      }
++
++      override fun seekToNextMediaItem() {
++        if (showNext) emitRemoteCommand(player, REMOTE_NEXT) else super.seekToNextMediaItem()
+       }
++
++      override fun seekToPrevious() {
++        if (showPrevious) emitRemoteCommand(player, REMOTE_PREVIOUS) else super.seekToPrevious()
++      }
++
++      override fun seekToPreviousMediaItem() {
++        if (showPrevious) emitRemoteCommand(player, REMOTE_PREVIOUS) else super.seekToPreviousMediaItem()
++      }
++    }
++  }
++
++  private fun emitRemoteCommand(player: AudioPlayer, command: String) {
++    try {
++      player.emit(REMOTE_COMMAND_EVENT, mapOf("command" to command))
++    } catch (e: Exception) {
++      appContext?.jsLogger?.error("Failed to forward lock screen command", e)
+     }
+   }
+ 
+@@ -558,6 +628,11 @@ class AudioControlsService : MediaSessionService() {
+ 
+     const val ACTION_SEEK_FORWARD = "expo.modules.audio.action.SEEK_FORWARD"
+     const val ACTION_SEEK_BACKWARD = "expo.modules.audio.action.SEEK_BACKWARD"
++    const val ACTION_NEXT = "expo.modules.audio.action.NEXT"
++    const val ACTION_PREVIOUS = "expo.modules.audio.action.PREVIOUS"
++    const val REMOTE_COMMAND_EVENT = "remoteCommand"
++    const val REMOTE_NEXT = "next"
++    const val REMOTE_PREVIOUS = "previous"
+ 
+     const val SEEK_INTERVAL_MS = 10000L
+   }
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
+index 839aaef..f8a3068 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
+@@ -24,11 +24,11 @@ class AudioMediaSessionCallback : MediaSession.Callback {
+             .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+             .add(Player.COMMAND_SEEK_FORWARD)
+             .add(Player.COMMAND_SEEK_BACK)
+-            // Remove track navigation commands
+-            .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+-            .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+-            .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
+-            .remove(Player.COMMAND_SEEK_TO_NEXT)
++            // Track navigation is exposed when the player reports it (see resolveSessionPlayer)
++            .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
++            .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
++            .add(Player.COMMAND_SEEK_TO_PREVIOUS)
++            .add(Player.COMMAND_SEEK_TO_NEXT)
+             .build()
+         )
+         .setAvailableSessionCommands(
+diff --git a/node_modules/expo-audio/build/AudioConstants.d.ts b/node_modules/expo-audio/build/AudioConstants.d.ts
+index cfd92ad..e96f913 100644
+--- a/node_modules/expo-audio/build/AudioConstants.d.ts
++++ b/node_modules/expo-audio/build/AudioConstants.d.ts
+@@ -15,5 +15,15 @@ export type AudioLockScreenOptions = {
+      * and scrub bar, and disable seek controls.
+      */
+     isLiveStream?: boolean;
++    /**
++     * Android (LiquidAudio patch): show a next-track button; presses arrive as a `remoteCommand`
++     * event `{ command: "next" }` on the player.
++     */
++    showNextTrack?: boolean;
++    /**
++     * Android (LiquidAudio patch): show a previous-track button; presses arrive as a `remoteCommand`
++     * event `{ command: "previous" }` on the player.
++     */
++    showPreviousTrack?: boolean;
+ };
+ //# sourceMappingURL=AudioConstants.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/expo-audio/src/AudioConstants.ts b/node_modules/expo-audio/src/AudioConstants.ts
+index dcc0452..1613134 100644
+--- a/node_modules/expo-audio/src/AudioConstants.ts
++++ b/node_modules/expo-audio/src/AudioConstants.ts
+@@ -16,4 +16,14 @@ export type AudioLockScreenOptions = {
+    * and scrub bar, and disable seek controls.
+    */
+   isLiveStream?: boolean;
++  /**
++   * Android (LiquidAudio patch): show a next-track button; presses arrive as a `remoteCommand`
++   * event `{ command: "next" }` on the player.
++   */
++  showNextTrack?: boolean;
++  /**
++   * Android (LiquidAudio patch): show a previous-track button; presses arrive as a `remoteCommand`
++   * event `{ command: "previous" }` on the player.
++   */
++  showPreviousTrack?: boolean;
+ };

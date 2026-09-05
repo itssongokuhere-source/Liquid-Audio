@@ -126,6 +126,14 @@ auto updates like big-company apps (delivered via Publish → build flow).
   **Resume playback**: session (queue window, index, position, repeat, shuffle) persisted to
   `liquidaudio.session`; restored paused on cold start. Deprecation warnings (pointerEvents, textShadow) cleared.
 
+- **Iteration 15 (Android system controls + widget — NATIVE BUILD ONLY)**: `patches/expo-audio+57.0.4.patch`
+  (patch-package, `postinstall`) adds `showNextTrack/showPreviousTrack` lock-screen options to expo-audio's
+  Android media session; presses arrive as a `remoteCommand` event on the player → AudioProvider advances the
+  queue. Android home-screen **Now Playing widget** (`react-native-android-widget`, `src/widget/*`, config plugin
+  in app.json, preview `assets/widget-preview/now-playing.png`): artwork/title/artist + prev/play-pause/next;
+  buttons act on the live app (bus in widget-task-handler) or open the app when the process is dead. Added
+  missing peer dep `expo-asset`. Nothing here can be tested in Expo Go / web preview.
+
 ## How to ship an update to users
 1. Publish → build the new APK on Emergent, upload it to KiwiFile (or any direct link host).
 2. In the app: Settings → About → tap the version row 5× → fill version, APK link, notes, PIN → Publish.

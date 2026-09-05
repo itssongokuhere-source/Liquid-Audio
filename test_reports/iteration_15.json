@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 15 smoke regression on web preview: GREEN. Home (/) boots clean (23 track-rows, 3 mix cards, 0 errors, no Invariant Violation, no 'module not found' — react-native-android-widget import is harmless on web). Search flow: opened /search via bottom tab, typed 'Aaj Bhi 2 Vishal Mishra' (page.keyboard.type — Playwright fill() does NOT trigger onChangeText on RN TextInput web build), waited 6s, tapped suggest-entity-song-JBrx_OoJ via element.evaluate('el=>el.click()'). NOTE: the /search screen renders quick-suggest entities with testID pattern `suggest-entity-song-<id>` (see /app/frontend/app/(tabs)/search.tsx:259), NOT `track-row-<id>` — the review-request selector `track-row-JBrx_OoJ` does not exist on the search screen; the equivalent testID is `suggest-entity-song-JBrx_OoJ` and both fire the same playNow. Mini-player appeared with 'Aaj Bhi 2 · Vishal Mishra', opened player screen — player-tab-lyrics, player-tab-upnext, player-tab-related, player-play-toggle, player-next, player-prev all present. Lyrics tab renders lyrics-view AND lyrics-wordsync 'Word‑synced' pill (screenshot confirms both pills). Up Next tab renders full queue (Now Playing 'Aaj Bhi 2' + 10 upcoming: Tum Ho Toh, Deewaniyat, Jaan Ban Gaye, Pehle Bhi Main, Kaise Hua…). Session persistence: with liquidaudio.autoplay=false to isolate from web-only audio-decode auto-advance, session wrote 452 bytes (queue+index+current JBrx_OoJ), full page.goto('/') reload restored mini-player 'Aaj Bhi 2 · Vishal Mishra' within 7s, session bytes identical after reload. Zero fatal (non-audio, non-widget) errors; the only page-errors are the expected 'no supported source'/'Failed to load' audio-decode errors on web preview and 10 benign Reanimated layout-animation warnings on the Up Next entrance animation. No red screen. No react-native-android-widget import errors on web. No deprecated-prop warnings.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_15.json"],
+  "action_items": [
+    "None blocking — web smoke regression is GREEN. Iteration 15 native features (patched expo-audio lock-screen controls + react-native-android-widget) are Android-native and cannot be exercised on web; a native Android build is required to validate lock-screen next/prev + home-screen widget task-handler. Recommend main agent produce an EAS dev-client (or `expo run:android`) build and manually verify.",
+    "Minor cosmetic (not from this iter): 10 [Reanimated] 'Properties [transform, opacity] may be overwritten by a layout animation' warnings fire when Up Next list mounts (FadeInDown entering animation on rows that also carry transform). Non-blocking; can be silenced by wrapping the Animated.View entering rows in an outer Animated.View that owns the layout animation, per Reanimated docs. Not a regression from this iteration.",
+    "Documentation nit: the review request selector `track-row-JBrx_OoJ` on the /search screen does not exist — /search uses `suggest-entity-song-<id>`. `track-row-<id>` is still used on Home / mix / playlist / artist / library screens (see /app/frontend/src/components/track-row.tsx:29). Recommend updating iteration test-notes to reflect the correct testID for search."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/app/_layout.tsx: react-native-android-widget import is correctly guarded (verified by absence of Invariant Violation / module-not-found on web bundle) — safe.",
+    "/app/frontend/src/components/audio-context.tsx: session write path (SESSION_KEY='liquidaudio.session', double JSON wrap by storage) still works — 452-byte payload round-trips identically across page.goto reload; queue/index/current-track restored to mini-player within 7s. No regression from iteration 14.",
+    "/app/frontend/src/widget/widget-task-handler.tsx: not reachable on web preview; behavior can only be validated on a native Android build."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "100% (4/4 acceptance items pass on web)"},
+  "seed_data_creation": "liquidaudio.autoplay='false' temporarily set in localStorage during the session-persistence sub-test to prevent web audio-decode auto-advance from mutating the queue mid-reload; cleared at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Web preview URL: EXPO_PUBLIC_BACKEND_URL=https://rhythm-glass-ui.preview.emergentagent.com. On the /search screen use testID `suggest-entity-song-<id>` (NOT `track-row-<id>`). To fire it reliably use `await el.evaluate('e=>e.click()')` and not page.click(force=True). For typing into RN TextInput on the web build, use `page.keyboard.type(...)` after clicking the input — `page.fill()` does NOT trigger onChangeText. Expected/ignorable web console noise: 'Failed to load because no supported source was found', 'The element has no supported sources', autoplay/NotAllowedError, [Reanimated] transform/opacity overwrite warnings. Iteration 15 introduced Android-native lock-screen controls (patched expo-audio) + react-native-android-widget — neither can be validated on web preview; requires a native Android build (EAS dev-client or `expo run:android`).",
+  "rca_of_issue": "N/A — smoke regression, no bug found. Only follow-up finding: the review request referenced testID `track-row-JBrx_OoJ` for the /search screen but the actual testID there is `suggest-entity-song-JBrx_OoJ`. Both trigger the same playNow path; behavior is correct, only the selector name in the review-request was outdated."
+}

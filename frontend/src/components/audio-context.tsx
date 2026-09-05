@@ -33,6 +33,7 @@ import { haptic } from "@/src/lib/haptics";
 import { useSettings } from "@/src/lib/settings-context";
 import { queryClient } from "@/src/query-client";
 import { storage } from "@/src/utils/storage";
+import { setWidgetCommandHandler, updateNowPlayingWidget } from "@/src/widget/widget-task-handler";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -246,7 +247,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
                 albumTitle: current.album ?? undefined,
                 artworkUrl: current.artwork ?? undefined,
               },
-              { showSeekForward: false, showSeekBackward: false },
+              { showSeekForward: false, showSeekBackward: false, showNextTrack: true, showPreviousTrack: true },
             );
           } catch {
             // older runtimes without lock-screen support
@@ -448,6 +449,40 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   }, [current, status.playing, player]);
 
   const next = useCallback(() => advance(1), [advance]);
+
+  // Android home-screen widget: mirror playback state + act on its buttons.
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    setWidgetCommandHandler((cmd) => {
+      const p = player;
+      if (cmd === "next") advance(1, true);
+      else if (cmd === "prev") advance(-1, true);
+      else if (cmd === "toggle") {
+        if (!queueRef.current.length) return;
+        if (p.playing) p.pause();
+        else p.play();
+      }
+    });
+    return () => setWidgetCommandHandler(null);
+  }, [player, advance]);
+  useEffect(() => {
+    if (Platform.OS !== "android" || !current) return;
+    updateNowPlayingWidget({ title: current.title, artist: current.artist, artwork: current.artwork, playing: !!status.playing });
+  }, [current, status.playing]);
+
+  // Lock-screen / notification next & previous (Android, via the patched expo-audio media session).
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const sub = (player as unknown as { addListener: (e: string, cb: (p: { command?: string }) => void) => { remove: () => void } })
+      .addListener("remoteCommand", (payload) => {
+        if (payload?.command === "next") advance(1, true);
+        else if (payload?.command === "previous") {
+          if ((player.currentTime ?? 0) > 3) player.seekTo(0);
+          else advance(-1, true);
+        }
+      });
+    return () => sub?.remove?.();
+  }, [player, advance]);
 
   const jumpTo = useCallback((i: number) => {
     if (i >= 0 && i < queueRef.current.length) {

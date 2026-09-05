@@ -15,7 +15,9 @@
       "bundleIdentifier": "com.emergent.rhythmglassui.wnm9ul",
       "buildNumber": "2",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -108,7 +110,31 @@
             }
           }
         ]
-      ]
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "fonts": [
+            "./assets/fonts/Inter-Bold.ttf",
+            "./assets/fonts/Inter-Medium.ttf"
+          ],
+          "widgets": [
+            {
+              "name": "NowPlaying",
+              "label": "LiquidAudio · Now Playing",
+              "description": "Control your music from the home screen",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/widget-preview/now-playing.png",
+              "updatePeriodMillis": 0
+            }
+          ]
+        }
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

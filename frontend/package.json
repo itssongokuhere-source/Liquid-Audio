@@ -9,7 +9,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo/metro-runtime": "57.0.15",
@@ -22,6 +23,7 @@
     "dayjs": "1.11.13",
     "expo": "57.0.19",
     "expo-alternate-app-icons": "8.0.0",
+    "expo-asset": "~57.0.16",
     "expo-audio": "~57.0.4",
     "expo-blur": "57.0.2",
     "expo-clipboard": "~57.0.1",
@@ -43,9 +45,11 @@
     "expo-system-ui": "57.0.3",
     "expo-updates": "~57.0.21",
     "expo-web-browser": "57.0.2",
+    "patch-package": "8.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-android-widget": "0.22.1",
     "react-native-dotenv": "3.4.11",
     "react-native-gesture-handler": "2.32.0",
     "react-native-keyboard-controller": "1.21.9",

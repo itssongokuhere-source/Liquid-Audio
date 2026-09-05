@@ -23,6 +23,7 @@ import { SettingsProvider } from "@/src/lib/settings-context";
 import { storage } from "@/src/utils/storage";
 import { queryClient } from "@/src/query-client";
 import { setAppScheme, useTheme, type ColorScheme } from "@/src/theme";
+import "@/src/widget/register";
 
 LogBox.ignoreAllLogs(true);
 
