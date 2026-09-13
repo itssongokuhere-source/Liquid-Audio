@@ -34,6 +34,7 @@ import { useSettings } from "@/src/lib/settings-context";
 import { queryClient } from "@/src/query-client";
 import { storage } from "@/src/utils/storage";
 import { setWidgetCommandHandler, updateNowPlayingWidget } from "@/src/widget/widget-task-handler";
+import { AudioFx, type AudioFxState } from "@/modules/audio-fx";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -449,6 +450,31 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   }, [current, status.playing, player]);
 
   const next = useCallback(() => advance(1), [advance]);
+
+  // Real DSP (Android build): attach the equalizer/effects to this player's audio session once
+  // audio is loaded, then restore the saved Sound settings.
+  const fxSessionRef = useRef(0);
+  useEffect(() => {
+    if (!AudioFx.available || !status.isLoaded) return;
+    const id = (player as unknown as { audioSessionId?: number }).audioSessionId ?? 0;
+    if (!id || id === fxSessionRef.current) return;
+    fxSessionRef.current = id;
+    AudioFx.attach(id);
+    storage
+      .getItem<string>("liquidaudio.eq", "")
+      .then((raw) => {
+        const saved = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : null;
+        if (saved) {
+          AudioFx.apply({
+            enabled: saved.enabled ?? true,
+            bands: saved.bands ?? new Array(10).fill(0),
+            effects: saved.effects ?? {},
+            hdEnhance: !!saved.hdEnhance,
+          } as AudioFxState);
+        }
+      })
+      .catch(() => {});
+  }, [status.isLoaded, player]);
 
   // Android home-screen widget: mirror playback state + act on its buttons.
   useEffect(() => {

@@ -25,6 +25,7 @@ import { haptic } from "@/src/lib/haptics";
 import { contentBottomPad } from "@/src/lib/layout";
 import { storage } from "@/src/utils/storage";
 import { makeStyles, useTheme } from "@/src/theme";
+import { AudioFx } from "@/modules/audio-fx";
 
 const EQ_KEY = "liquidaudio.eq";
 const BANDS = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
@@ -62,6 +63,7 @@ export default function EqualizerScreen() {
   const [preset, setPreset] = useState("Flat");
   const [bands, setBands] = useState<number[]>(PRESETS.Flat);
   const [effects, setEffects] = useState<Record<string, boolean>>({});
+  const [hdEnhance, setHdEnhance] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -71,6 +73,7 @@ export default function EqualizerScreen() {
         preset: string;
         bands: number[];
         effects: Record<string, boolean>;
+        hdEnhance?: boolean;
       }>(EQ_KEY, null as never)
       .then((saved) => {
         if (saved) {
@@ -78,14 +81,18 @@ export default function EqualizerScreen() {
           setPreset(saved.preset ?? "Flat");
           setBands(saved.bands ?? PRESETS.Flat);
           setEffects(saved.effects ?? {});
+          setHdEnhance(!!saved.hdEnhance);
         }
         setLoaded(true);
       });
   }, []);
 
   useEffect(() => {
-    if (loaded) storage.setItem(EQ_KEY, { enabled, preset, bands, effects });
-  }, [enabled, preset, bands, effects, loaded]);
+    if (!loaded) return;
+    storage.setItem(EQ_KEY, { enabled, preset, bands, effects, hdEnhance });
+    // Real DSP on the native Android build (no-op in Expo Go / web).
+    AudioFx.apply({ enabled, bands, effects, hdEnhance });
+  }, [enabled, preset, bands, effects, hdEnhance, loaded]);
 
   const applyPreset = (name: string) => {
     haptic.medium();
@@ -137,6 +144,36 @@ export default function EqualizerScreen() {
       </View>
 
       <Visualizer playing={isPlaying && enabled} />
+
+      <Pressable
+        testID="hd-enhance"
+        onPress={() => {
+          haptic.medium();
+          setHdEnhance((v) => !v);
+        }}
+        style={{ opacity: dim }}
+        disabled={!enabled}
+      >
+        <Glass intensity={50} style={[styles.hdCard, hdEnhance && styles.hdCardOn]}>
+          <View style={[styles.hdIcon, hdEnhance && { backgroundColor: colors.brandPrimary }]}>
+            <Icon name="sparkles" size={20} color={hdEnhance ? colors.onBrandPrimary : colors.brandPrimary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.hdTitle}>HD Enhance</Text>
+            <Text style={styles.hdSub}>
+              Clarity, air and tighter bass with gentle loudness and stereo widening
+            </Text>
+          </View>
+          <View style={{ pointerEvents: "none" }}>
+            <Switch
+              value={hdEnhance}
+              disabled={!enabled}
+              trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
+              thumbColor={colors.onBrandPrimary}
+            />
+          </View>
+        </Glass>
+      </Pressable>
 
       {current ? (
         <View style={styles.nowPlaying}>
@@ -224,8 +261,9 @@ export default function EqualizerScreen() {
       </View>
 
       <Text style={styles.note}>
-        EQ presets & effects are saved to this device. Full DSP band processing activates on a
-        native build.
+        {AudioFx.available
+          ? "Shaping the live audio output of this device."
+          : "EQ presets & effects are saved to this device. Sound shaping activates on the Android app build."}
       </Text>
     </ScrollView>
   );
@@ -482,6 +520,29 @@ const useStyles = makeStyles((colors) => ({
     backgroundColor: colors.border,
   },
   dotOn: { backgroundColor: colors.brandPrimary },
+  hdCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 16,
+    borderRadius: 22,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  hdCardOn: { borderColor: colors.brandPrimary },
+  hdIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceTertiary,
+  },
+  hdTitle: { color: colors.onSurface, fontSize: 16, fontWeight: "700" },
+  hdSub: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 2 },
   note: {
     color: colors.muted,
     fontSize: 12,

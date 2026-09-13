@@ -134,6 +134,13 @@ auto updates like big-company apps (delivered via Publish → build flow).
   buttons act on the live app (bus in widget-task-handler) or open the app when the process is dead. Added
   missing peer dep `expo-asset`. Nothing here can be tested in Expo Go / web preview.
 
+- **Iteration 16**: APK-from-repo fix — backend URL resolves Settings override → `EXPO_PUBLIC_BACKEND_URL` →
+  `app.json extra.backendUrl` (the .env is git-ignored, so repo builds had no API). Settings → **Server** lets the
+  user point the installed app at any deployed LiquidAudio backend ("Save & test" probes `/api/`). **Real Android
+  DSP**: local Expo module `modules/audio-fx` (Equalizer/BassBoost/Virtualizer/LoudnessEnhancer/PresetReverb on the
+  player's audio session; expo-audio patch exposes `audioSessionId`), 10-band ISO curve interpolated to device bands;
+  **HD Enhance** toggle (clarity curve + gentle loudness/widening). Player layout: artwork flexes to fill tall screens.
+
 ## How to ship an update to users
 1. Publish → build the new APK on Emergent, upload it to KiwiFile (or any direct link host).
 2. In the app: Settings → About → tap the version row 5× → fill version, APK link, notes, PIN → Publish.

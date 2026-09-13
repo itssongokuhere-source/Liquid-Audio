@@ -301,3 +301,15 @@ frontend:
   - task: "react-native-android-widget NowPlaying widget (src/widget/*) with prev/toggle/next click actions via in-process bus; opens app when process dead; state persisted in liquidaudio.widgetState"
     implemented: true
     needs_retesting: false (native only)
+
+## Iteration 16 — APK content fix (backend URL fallback + Settings server override), native DSP EQ + HD Enhance (main agent)
+frontend:
+  - task: "api.ts: backend URL resolves override (Settings → Server, key liquidaudio.serverUrl) → EXPO_PUBLIC_BACKEND_URL → app.json extra.backendUrl; initBackend() gates root render"
+    implemented: true
+    needs_retesting: true
+  - task: "Settings → Server section: TextInput server-url, server-save ('Save & test' probes GET {url}/api/ expecting status ok, then clears react-query cache), server-reset"
+    implemented: true
+    needs_retesting: true
+  - task: "Equalizer: HD Enhance card (testID hd-enhance) persisted in liquidaudio.eq; native DSP via local Expo module modules/audio-fx (Android build only; no-op on web/Expo Go); note text changes based on AudioFx.available"
+    implemented: true
+    needs_retesting: true

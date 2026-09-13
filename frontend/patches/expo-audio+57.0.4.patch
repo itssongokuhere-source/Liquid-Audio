@@ -1,3 +1,22 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
+index 992239b..59f5f4d 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
+@@ -392,6 +392,14 @@ class AudioModule : Module() {
+         true
+       }
+ 
++      // LiquidAudio patch: expose ExoPlayer's audio session so app-level DSP (Equalizer,
++      // BassBoost, Virtualizer, LoudnessEnhancer) can attach to this player's output.
++      Property("audioSessionId") { player ->
++        runOnMain {
++          player.ref.audioSessionId
++        }
++      }
++
+       Property("loop") { player ->
+         runOnMain {
+           player.ref.repeatMode == Player.REPEAT_MODE_ONE
 diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
 index 86880d9..3a32e71 100644
 --- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
@@ -187,6 +206,21 @@ index cfd92ad..e96f913 100644
  };
  //# sourceMappingURL=AudioConstants.d.ts.map
 \ No newline at end of file
+diff --git a/node_modules/expo-audio/build/AudioModule.types.d.ts b/node_modules/expo-audio/build/AudioModule.types.d.ts
+index f3ae4ee..88daad8 100644
+--- a/node_modules/expo-audio/build/AudioModule.types.d.ts
++++ b/node_modules/expo-audio/build/AudioModule.types.d.ts
+@@ -171,6 +171,10 @@ export declare class AudioPlayer extends SharedObject<AudioEvents> {
+      * @param metadata Optional metadata to display on the lock screen (title, artist, album, artwork).
+      * @param options Optional configuration to configure the lock screen controls.
+      */
++    /**
++     * Android (LiquidAudio patch): the player's audio session id, for attaching audio effects.
++     */
++    readonly audioSessionId: number;
+     setActiveForLockScreen(active: boolean, metadata?: AudioMetadata, options?: AudioLockScreenOptions): void;
+     /**
+      * Updates the metadata displayed on the lock screen for this player.
 diff --git a/node_modules/expo-audio/src/AudioConstants.ts b/node_modules/expo-audio/src/AudioConstants.ts
 index dcc0452..1613134 100644
 --- a/node_modules/expo-audio/src/AudioConstants.ts
@@ -206,3 +240,19 @@ index dcc0452..1613134 100644
 +   */
 +  showPreviousTrack?: boolean;
  };
+diff --git a/node_modules/expo-audio/src/AudioModule.types.ts b/node_modules/expo-audio/src/AudioModule.types.ts
+index 7e75371..9a0b154 100644
+--- a/node_modules/expo-audio/src/AudioModule.types.ts
++++ b/node_modules/expo-audio/src/AudioModule.types.ts
+@@ -219,6 +219,11 @@ export declare class AudioPlayer extends SharedObject<AudioEvents> {
+    * @param metadata Optional metadata to display on the lock screen (title, artist, album, artwork).
+    * @param options Optional configuration to configure the lock screen controls.
+    */
++  /**
++   * Android (LiquidAudio patch): the player's audio session id, for attaching audio effects.
++   */
++  readonly audioSessionId: number;
++
+   setActiveForLockScreen(
+     active: boolean,
+     metadata?: AudioMetadata,

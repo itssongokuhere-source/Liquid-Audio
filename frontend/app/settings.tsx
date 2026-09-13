@@ -14,7 +14,8 @@ import { Segmented, SettingRow, SettingsSection } from "@/src/components/setting
 import { Text } from "@/src/components/text";
 import { useToast } from "@/src/components/toast";
 import { useUpdates } from "@/src/components/updates-context";
-import { publishRelease } from "@/src/lib/api";
+import { defaultBackend, getBackend, publishRelease, setBackendUrl } from "@/src/lib/api";
+import { queryClient } from "@/src/query-client";
 import { APP_ICONS, applyAppIcon, supportsAlternateIcons } from "@/src/lib/app-icon";
 import { haptic } from "@/src/lib/haptics";
 import { useSettings, type CrossfadeSeconds } from "@/src/lib/settings-context";
@@ -41,6 +42,32 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const toast = useToast();
+  const [serverUrl, setServerUrl] = useState(getBackend());
+  const [serverDirty, setServerDirty] = useState(false);
+  const [serverTesting, setServerTesting] = useState(false);
+  const saveServer = async () => {
+    const url = serverUrl.trim().replace(/\/+$/, "").replace(/\/api$/, "");
+    if (!/^https?:\/\//.test(url)) {
+      toast("Enter a full URL starting with https://", "error");
+      return;
+    }
+    setServerTesting(true);
+    try {
+      const res = await fetch(`${url}/api/`, { method: "GET" });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body || body.status !== "ok") throw new Error("bad");
+      await setBackendUrl(url === defaultBackend ? "" : url);
+      setServerUrl(getBackend());
+      setServerDirty(false);
+      queryClient.clear();
+      haptic.success();
+      toast("Connected — songs now load from this server", "success");
+    } catch {
+      toast("Couldn't reach a LiquidAudio server at that URL", "error");
+    } finally {
+      setServerTesting(false);
+    }
+  };
   const { settings, update } = useSettings();
   const { autoplay, toggleAutoplay, hasTrack } = useAudio();
   const { downloads, usedBytes, clearAll } = useDownloads();
@@ -354,7 +381,42 @@ export default function SettingsScreen() {
           <SettingRow icon="images-outline" title="Clear image cache" subtitle="Frees space used by cached artwork" onPress={clearImageCache} testID="clear-image-cache" last />
         </SettingsSection>
 
-        <SettingsSection title="About" index={4}>
+        <SettingsSection title="Server" index={4}>
+          <SettingRow
+            icon="cloud-outline"
+            title="Music API server"
+            subtitle={serverUrl === getBackend() && !serverDirty ? `Connected to ${getBackend() || "— not set —"}` : "Enter the URL of your deployed LiquidAudio backend"}
+            testID="server-row"
+          />
+          <View style={[styles.block, styles.blockBorder]}>
+            <TextInput
+              testID="server-url"
+              value={serverUrl}
+              onChangeText={(v) => {
+                setServerUrl(v);
+                setServerDirty(true);
+              }}
+              placeholder={defaultBackend || "https://your-server.com"}
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <AnimatedPressable testID="server-save" onPress={saveServer} style={[styles.smallBtn, { backgroundColor: colors.brandPrimary }]}>
+                <Text style={[styles.smallBtnText, { color: colors.onBrandPrimary }]}>{serverTesting ? "Testing…" : "Save & test"}</Text>
+              </AnimatedPressable>
+              {serverUrl !== defaultBackend ? (
+                <AnimatedPressable testID="server-reset" onPress={() => { setServerUrl(defaultBackend); setServerDirty(true); }} style={styles.smallBtn}>
+                  <Text style={styles.smallBtnText}>Use default</Text>
+                </AnimatedPressable>
+              ) : null}
+            </View>
+          </View>
+        </SettingsSection>
+
+        <SettingsSection title="About" index={5}>
           <SettingRow
             icon="information-circle-outline"
             title="LiquidAudio"

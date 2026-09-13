@@ -121,7 +121,7 @@
           "widgets": [
             {
               "name": "NowPlaying",
-              "label": "LiquidAudio · Now Playing",
+              "label": "LiquidAudio \u00b7 Now Playing",
               "description": "Control your music from the home screen",
               "minWidth": "250dp",
               "minHeight": "110dp",
@@ -138,6 +138,9 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "backendUrl": "https://rhythm-glass-ui.preview.emergentagent.com"
     }
   }
 }

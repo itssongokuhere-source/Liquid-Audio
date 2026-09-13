@@ -57,7 +57,7 @@ export default function PlayerScreen() {
   const onPrev = guest ? () => jam.sendControl("prev") : prev;
   const { height: winH, width: winW } = useWindowDimensions();
   // Artwork must never push the controls off-screen: fit it to the space left after the chrome.
-  const artSize = Math.max(180, Math.min(winW - 48, 360, winH - insets.top - insets.bottom - 470));
+  const artSize = Math.max(180, Math.min(winW - 48, 460, winH - insets.top - insets.bottom - 440));
   const [panel, setPanel] = useState<PanelTab | null>(null);
   const panelY = useSharedValue(winH);
   const scrim = useSharedValue(0);
@@ -130,7 +130,7 @@ export default function PlayerScreen() {
 
       <View style={[styles.content, { paddingTop: insets.top + 8, paddingBottom: Math.max(insets.bottom, 8) + BAR_H + 16 }]}>
         <GestureDetector gesture={dismiss}>
-        <View collapsable={false} testID="player-drag-zone">
+        <View collapsable={false} style={{ flex: 1 }} testID="player-drag-zone">
         <View style={styles.topBar}>
           <Pressable testID="player-close" onPress={() => router.back()} hitSlop={12} style={styles.topBtn}>
             <Icon name="chevron-down" size={28} color={WHITE} />
@@ -392,6 +392,7 @@ const styles = StyleSheet.create({
   },
   jamPillText: { color: WHITE, fontSize: 13, fontWeight: "700" },
   artWrap: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     marginVertical: 12,

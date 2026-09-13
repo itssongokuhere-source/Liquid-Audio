@@ -1,7 +1,36 @@
 // API client for the LiquidAudio backend (Audius + LRCLIB proxy + library).
 
-export const BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL as string;
-export const API = `${BACKEND}/api`;
+import Constants from "expo-constants";
+
+import { storage } from "@/src/utils/storage";
+
+const SERVER_KEY = "liquidaudio.serverUrl";
+const trim = (u?: string | null) => (u || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
+
+// Resolution order: user override (Settings → Server) → build-time env → app.json extra.backendUrl.
+// The env file is not committed, so builds made from the repo rely on app.json / the override.
+const DEFAULT_BACKEND =
+  trim(process.env.EXPO_PUBLIC_BACKEND_URL) ||
+  trim((Constants.expoConfig?.extra as { backendUrl?: string } | undefined)?.backendUrl);
+let backendOverride = "";
+
+/** Load the persisted server override; call once before the first request. */
+export async function initBackend() {
+  backendOverride = trim(await storage.getItem<string>(SERVER_KEY, ""));
+}
+
+export async function setBackendUrl(url: string) {
+  backendOverride = trim(url);
+  if (backendOverride) await storage.setItem(SERVER_KEY, backendOverride);
+  else await storage.removeItem(SERVER_KEY);
+}
+
+export function getBackend() {
+  return backendOverride || DEFAULT_BACKEND;
+}
+export const defaultBackend = DEFAULT_BACKEND;
+const API = { toString: () => `${getBackend()}/api` };
+const BACKEND = { toString: getBackend };
 
 export type Track = {
   id: string;
@@ -62,7 +91,7 @@ export async function endJam(code: string, deviceId: string) {
 }
 
 export function jamSocketUrl(code: string, deviceId: string, name: string) {
-  const ws = API.replace(/^http/, "ws");
+  const ws = `${API}`.replace(/^http/, "ws");
   return `${ws}/jam/ws/${encodeURIComponent(code.toUpperCase())}?device_id=${encodeURIComponent(deviceId)}&name=${encodeURIComponent(name)}`;
 }
 
